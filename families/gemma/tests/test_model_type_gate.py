@@ -68,12 +68,12 @@ def test_a_later_gemma_generation_is_refused(tmp_path: Path) -> None:
     """Gemma 3n and 4 need machinery this family still does not have.
 
     Gemma 4 adds vision and audio towers, per-layer input embeddings and
-    KV-shared layers; Gemma 3n is its own architecture again. Neither is built
-    here, so a prefix check would let them build a full-attention graph and
+    KV-shared layers; Gemma 3n is its own architecture again. Neither is built through the ordinary native entrypoint;
+    explicit paired Edge offload is separate, so a prefix check would let them build a full-attention graph and
     generate quietly wrong text. The refusal names the type so the message is
     actionable. Gemma 3 text is supported and is covered below.
     """
-    for model_type in ("gemma3n", "gemma4", "gemma4_text"):
+    for model_type in ("gemma3n", "gemma4", "gemma4_text", "gemma4_unified"):
         directory = _model_dir(tmp_path / model_type.replace("_", ""), model_type)
         with pytest.raises(ValueError, match=re.escape(f"model_type={model_type!r}")):
             _build(directory)
