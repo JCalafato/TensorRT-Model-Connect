@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from .build import BuildRequest, _load_family, build
+from .build import BuildExecutionInputs, BuildRequest, NamedCheckpoint, _load_family, build
 from .model_support import (
     AmbiguousFamilyError,
     FamilyResolutionError,
@@ -46,6 +46,14 @@ def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
     build_parser.add_argument("--fp32-layer", type=int, action="append", default=[])
     build_parser.add_argument("--dynamic-kv-cache", action="store_true")
     build_parser.add_argument("--verbose", action="store_true")
+    build_parser.add_argument("--execution-variant", help="Explicit family-owned execution variant")
+    build_parser.add_argument(
+        "--companion",
+        action="append",
+        default=[],
+        metavar="ROLE=LOCAL_DIR",
+        help="Named existing local checkpoint; repeat for multiple distinct roles",
+    )
     prepare_parser = commands.add_parser(
         "prepare-structure",
         help="Prepare one structure request without rebuilding its model bundle",
@@ -62,6 +70,25 @@ def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
     if callable(add_arguments):
         add_arguments(prepare_parser)
     return parser
+
+
+def _execution_inputs(args: argparse.Namespace) -> BuildExecutionInputs | None:
+    """Parse only explicit local inputs; no variant list or model acquisition."""
+    if args.command != "build":
+        return None
+    if args.execution_variant is None:
+        if args.companion:
+            raise ValueError("--companion requires --execution-variant")
+        return None
+    checkpoints = []
+    for value in args.companion:
+        role, separator, directory = value.partition("=")
+        if not separator or not role or not directory:
+            raise ValueError("--companion must be ROLE=LOCAL_DIR")
+        if "://" in directory:
+            raise ValueError("--companion requires a local directory, not a URI")
+        checkpoints.append(NamedCheckpoint(role, Path(directory)))
+    return BuildExecutionInputs(args.execution_variant, tuple(checkpoints))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -88,6 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     family_module = _load_family(family) if preliminary.command == "prepare-structure" else None
     args = _parser(family_module).parse_args(arguments)
+    execution = _execution_inputs(args)
     if args.command == "prepare-structure":
         prepare = getattr(family_module, "prepare_structure_request", None)
         if not callable(prepare):
@@ -111,27 +139,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"family {family!r} does not support task {task!r}; "
             f"choose one of: {', '.join(support.tasks)}"
         )
-    build(
-        BuildRequest(
-            model_dir=model_dir,
-            output_path=args.output,
-            precision=args.precision or support.default_precision,
-            backend=args.backend,
-            family=family,
-            task=task,
-            max_sequence_length=args.max_sequence_length,
-            image_height=args.image_height,
-            image_width=args.image_width,
-            video_num_frames=args.video_num_frames,
-            max_batch_size=args.max_batch_size,
-            tensor_parallel_size=args.tensor_parallel_size,
-            context_parallel_size=args.context_parallel_size,
-            quantization=args.quantization,
-            fp32_layers=tuple(args.fp32_layer),
-            dynamic_kv_cache=args.dynamic_kv_cache,
-            verbose=args.verbose,
-        )
+    request = BuildRequest(
+        model_dir=model_dir,
+        output_path=args.output,
+        precision=args.precision or support.default_precision,
+        backend=args.backend,
+        family=family,
+        task=task,
+        max_sequence_length=args.max_sequence_length,
+        image_height=args.image_height,
+        image_width=args.image_width,
+        video_num_frames=args.video_num_frames,
+        max_batch_size=args.max_batch_size,
+        tensor_parallel_size=args.tensor_parallel_size,
+        context_parallel_size=args.context_parallel_size,
+        quantization=args.quantization,
+        fp32_layers=tuple(args.fp32_layer),
+        dynamic_kv_cache=args.dynamic_kv_cache,
+        verbose=args.verbose,
     )
+    if execution is None:
+        build(request)
+    else:
+        build(request, execution=execution)
     return 0
 
 
