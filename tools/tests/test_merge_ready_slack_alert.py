@@ -15,7 +15,10 @@ import pytest
 import yaml
 
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/pr-merge-ready-slack-alert.yml"
+WORKFLOW = (
+    Path(__file__).resolve().parents[2]
+    / ".github/workflows/community-activity-slack-alert.yml"
+)
 INTERNAL_GATE = "TRTMC Internal CI / Automated premerge gate"
 
 
@@ -31,8 +34,8 @@ def scenario() -> dict:
             "head": {"sha": "a" * 40},
             "base": {"ref": "main", "sha": "b" * 40},
             "title": "A model <test> & <!here>",
-            "user": {"login": "maintainer"},
-            "author_association": "MEMBER",
+            "user": {"login": "contributor"},
+            "author_association": "CONTRIBUTOR",
             "html_url": "https://github.com/NVIDIA/TensorRT-Model-Connect/pull/1190",
         },
         "statuses": [{"id": 10, "context": INTERNAL_GATE, "state": "success"}],
@@ -99,7 +102,7 @@ def run_alert(tmp_path: Path, data: dict, *, dry_run: bool = False) -> subproces
         path.chmod(0o755)
     (tmp_path / "scenario.json").write_text(json.dumps(data))
     (tmp_path / "counts.json").write_text("{}")
-    step = yaml.safe_load(WORKFLOW.read_text())["jobs"]["notify"]["steps"][0]
+    step = yaml.safe_load(WORKFLOW.read_text())["jobs"]["notify-merge-ready-pr"]["steps"][0]
     return subprocess.run(
         ["bash", "-c", step["run"]],
         env={
@@ -117,12 +120,8 @@ def run_alert(tmp_path: Path, data: dict, *, dry_run: bool = False) -> subproces
     )
 
 
-@pytest.mark.parametrize("association", ["MEMBER", "CONTRIBUTOR"])
-def test_merge_ready_alert_posts_green_pass_for_internal_and_external_prs(
-    tmp_path: Path, association: str
-) -> None:
+def test_merge_ready_alert_posts_green_pass_for_external_contributor(tmp_path: Path) -> None:
     data = scenario()
-    data["pull"]["author_association"] = association
     result = run_alert(tmp_path, data)
     assert result.returncode == 0, result.stderr
     payload = json.loads((tmp_path / "payloads.jsonl").read_text())
@@ -131,6 +130,17 @@ def test_merge_ready_alert_posts_green_pass_for_internal_and_external_prs(
     assert "<!here>" not in json.dumps(payload)
     assert "Internal CI" in json.dumps(payload)
     assert json.loads((tmp_path / "markers.json").read_text())[0]["state"] == "success"
+
+
+@pytest.mark.parametrize("association", ["OWNER", "MEMBER", "COLLABORATOR"])
+def test_repository_members_do_not_receive_merge_ready_alerts(
+    tmp_path: Path, association: str
+) -> None:
+    data = scenario()
+    data["pull"]["author_association"] = association
+    result = run_alert(tmp_path, data)
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "payloads.jsonl").exists()
 
 
 @pytest.mark.parametrize("state", ["pending", "failure", "error", "missing"])
@@ -231,9 +241,17 @@ def test_dry_run_previews_without_webhook_or_status_writes(tmp_path: Path) -> No
 def test_workflow_runs_only_trusted_metadata_and_serializes_delivery() -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text())
     events = workflow.get("on", workflow.get(True))
-    assert set(events) == {"workflow_run", "schedule", "workflow_dispatch"}
+    assert set(events) == {
+        "issues",
+        "issue_comment",
+        "discussion",
+        "discussion_comment",
+        "workflow_run",
+        "schedule",
+        "workflow_dispatch",
+    }
     assert "TensorRT-Model-Connect Internal CI Bridge" in events["workflow_run"]["workflows"]
-    job = workflow["jobs"]["notify"]
+    job = workflow["jobs"]["notify-merge-ready-pr"]
     assert workflow["permissions"] == {}
     assert job["permissions"] == {"checks": "read", "pull-requests": "read", "statuses": "write"}
     assert job["concurrency"]["cancel-in-progress"] is False
