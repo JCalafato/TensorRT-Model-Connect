@@ -937,12 +937,32 @@ int dispatch(const Command& command, ITask& task, std::ostream& output) {
         const fs::path metadata_path = has_option(command, "--output-json")
                                            ? command.options.at("--output-json")
                                            : structure_path.string() + ".metadata.json";
+        if (fs::absolute(structure_path).lexically_normal() ==
+            fs::absolute(metadata_path).lexically_normal())
+            throw std::invalid_argument("--output and --output-json must use different paths");
         auto indexed_path = [](const fs::path& path, std::size_t index) {
             if (index == 0)
                 return path;
             return path.parent_path() / (path.stem().string() + "_sample_" + std::to_string(index) +
                                          path.extension().string());
         };
+        const auto sample_count = result.samples.empty() ? 1U : result.samples.size();
+        std::vector<std::pair<fs::path, fs::path>> output_paths;
+        output_paths.reserve(sample_count);
+        std::unordered_set<std::string> normalized_paths;
+        for (std::size_t index = 0; index < sample_count; ++index) {
+            auto current_structure = indexed_path(structure_path, index);
+            auto current_metadata = has_option(command, "--output-json")
+                                        ? indexed_path(metadata_path, index)
+                                        : fs::path(current_structure.string() + ".metadata.json");
+            for (const auto& path : {current_structure, current_metadata}) {
+                const auto normalized = fs::absolute(path).lexically_normal().string();
+                if (!normalized_paths.insert(normalized).second)
+                    throw std::invalid_argument(
+                        "--output and --output-json must use different paths");
+            }
+            output_paths.emplace_back(std::move(current_structure), std::move(current_metadata));
+        }
         auto write_output = [](const fs::path& path, const std::string& payload,
                                const char* label) {
             if (!path.parent_path().empty())
@@ -957,11 +977,7 @@ int dispatch(const Command& command, ITask& task, std::ostream& output) {
         auto append_sample = [&](std::size_t index, const std::string& structure,
                                  const std::string& metadata,
                                  const StructureConfidence& confidence) {
-            const auto current_structure = indexed_path(structure_path, index);
-            const auto current_metadata =
-                has_option(command, "--output-json")
-                    ? indexed_path(metadata_path, index)
-                    : fs::path(current_structure.string() + ".metadata.json");
+            const auto& [current_structure, current_metadata] = output_paths.at(index);
             write_output(current_structure, structure, "structure output");
             write_output(current_metadata, metadata, "structure metadata");
             sample_outputs.push_back({{"structure_path", current_structure.string()},
