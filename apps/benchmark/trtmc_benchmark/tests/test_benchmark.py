@@ -18,7 +18,7 @@ from trtmc_benchmark.catalog import (
     default_manifest_root,
     resolve_case,
 )
-from trtmc_benchmark.cli import main
+from trtmc_benchmark.cli import _load_data_requests, main
 from trtmc_benchmark.metrics import reduce_metrics
 from trtmc_benchmark.report import generate_collection_report
 from trtmc_benchmark.service import BenchmarkService
@@ -58,6 +58,38 @@ def test_forecast_case_uses_public_forecast_request(tmp_path: Path) -> None:
     assert case.request["past_values"][:2] == [100.1, 100.15]
 
 
+def test_data_file_accepts_named_public_task_requests(tmp_path: Path) -> None:
+    image = tmp_path / "input.png"
+    image.write_bytes(b"image")
+    data = tmp_path / "requests.jsonl"
+    data.write_text(
+        "\n".join(
+            (
+                json.dumps({"name": "first", "request": {"prompt": "hello"}}),
+                json.dumps({"name": "second", "request": {"image_path": "input.png"}}),
+            )
+        )
+    )
+
+    requests = _load_data_requests(data)
+
+    assert requests[0] == ("first", {"prompt": "hello"})
+    assert requests[1] == ("second", {"image_path": str(image.resolve())})
+
+
+def test_data_file_rejects_duplicate_case_names(tmp_path: Path) -> None:
+    data = tmp_path / "requests.json"
+    data.write_text(
+        json.dumps(
+            [
+                {"name": "same", "request": {"prompt": "one"}},
+                {"name": "same", "request": {"prompt": "two"}},
+            ]
+        )
+    )
+
+    with pytest.raises(BenchmarkError, match="empty or repeated"):
+        _load_data_requests(data)
 @pytest.mark.parametrize("task", [
     "text_continuation", "conditional_text_generation", "corrupted_text_reconstruction",
     "text_summarization",
@@ -973,6 +1005,16 @@ def test_build_command_passes_manifest_backend_and_dynamic_kv_cache(tmp_path: Pa
 
     assert command[command.index("--backend") + 1] == "trt_rtx"
     assert command.count("--dynamic-kv-cache") == 1
+
+
+def test_direct_model_descriptor_does_not_require_a_catalog(tmp_path: Path) -> None:
+    source = REPO / "families/gpt2/tests/manifests/gpt2-125m.json"
+    descriptor = tmp_path / "model.json"
+    descriptor.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    model = ManifestCatalog().resolve(str(descriptor))
+
+    assert model.name == "gpt2-125m"
 
 
 def test_bundle_builder_uses_core_model_resolution(tmp_path: Path, monkeypatch) -> None:

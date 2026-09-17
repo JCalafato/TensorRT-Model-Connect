@@ -28,6 +28,16 @@ trtmc-bench run --model distilgpt2 --runtime-root /opt/trtmc/lib -o results/dist
 trtmc-bench run apps/benchmark/example.yaml -o results/example
 ```
 
+Without another workload, `--model` uses that model's E2E testcase. To benchmark
+user input, pass public Task request JSON or JSONL. Each JSONL row may be a raw
+request or `{"name": "case-name", "request": {...}}`; relative `*_path` values
+are resolved from the data file.
+
+```bash
+trtmc-bench run --model gpt2-125m --data requests.jsonl \
+  --runtime-root /opt/trtmc/lib -o results/gpt2-data
+```
+
 Missing bundles are built through the public build command and cached. Pass
 `--no-build` when every selected bundle must already exist.
 
@@ -317,3 +327,30 @@ Install benchmark-only dependencies without adding them to a model family:
 ```bash
 python -m pip install -r apps/benchmark/performance/requirements.txt
 ```
+
+## Internal Accuracy and Performance qualification
+
+The installed `trtmc-bench` remains a user application. Repository CI and QA
+use the separate, non-packaged `tools/model_benchmark.py` driver. A family opts
+in by adding one YAML file under `families/<family>/tests/benchmark/`; the file
+may contain multiple `accuracy` and `performance` cases. Families without that
+file, including L0-only models, are not discovered.
+
+Run every discovered case or select an exact model:
+
+```bash
+python3 tools/model_benchmark.py list
+python3 tools/model_benchmark.py run --all --kind performance \
+  --runtime-root /opt/trtmc/lib --worker /opt/trtmc/bin/trtmc_benchmark_worker
+python3 tools/model_benchmark.py run --model gpt2-125m --kind accuracy \
+  --dataset mmlu-five-shot=/data/mmlu_dataset.json \
+  --runtime-root /opt/trtmc/lib --worker /opt/trtmc/bin/trtmc_benchmark_worker
+```
+
+Manual or restricted datasets are supplied as `--dataset ID=PATH`; public
+download definitions may instead materialize into `--data-root`. Model files do
+not select a GPU. Both Accuracy and Performance invoke the installed
+`trtmc-bench` through its public bundle and Task path. Performance tries the
+declared compiled reference first and uses eager only when that reference fails
+to execute. A completed reference whose output disagrees with the candidate is
+a failed contract and never triggers fallback.
