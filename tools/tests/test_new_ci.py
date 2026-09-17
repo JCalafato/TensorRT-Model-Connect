@@ -959,8 +959,13 @@ def test_wheel_validation_requires_exact_new_payload(tmp_path: Path) -> None:
         archive.writestr("tensorrt_model_connect/__init__.py", "")
         archive.writestr("tensorrt_model_connect/__main__.py", "def main(): pass\n")
         archive.writestr("trtmc_benchmark/__init__.py", "")
+        server_source = tmp_path / "apps/server/python/trtmc_server/__init__.py"
+        server_source.parent.mkdir(parents=True)
+        server_source.write_text("")
+        archive.writestr("trtmc_server/__init__.py", "")
         archive.writestr("families/__init__.py", "")
         archive.writestr("tensorrt_model_connect/bin/trtmc", "")
+        archive.writestr("tensorrt_model_connect/bin/trtmc-server", "")
         archive.writestr("tensorrt_model_connect/bin/trtmc_benchmark_worker", "")
         archive.writestr("tensorrt_model_connect/bin/trtmc_dataset_benchmark", "")
         archive.writestr("tensorrt_model_connect/bin/libtrtmc_core.so", "")
@@ -972,7 +977,8 @@ def test_wheel_validation_requires_exact_new_payload(tmp_path: Path) -> None:
         archive.writestr(
             "package-0.1.dist-info/entry_points.txt",
             "[console_scripts]\ntrtmc = tensorrt_model_connect.__main__:main\n"
-            "trtmc-bench = trtmc_benchmark.cli:main\n",
+            "trtmc-bench = trtmc_benchmark.cli:main\n"
+            "trtmc-server = trtmc_server.cli:main\n",
         )
         archive.writestr(
             "package-0.1.dist-info/METADATA",
@@ -980,6 +986,7 @@ def test_wheel_validation_requires_exact_new_payload(tmp_path: Path) -> None:
             "Name: package\n"
             "Version: 0.1\n"
             "Provides-Extra: cutedsl\n"
+            "Provides-Extra: serve\n"
             "Provides-Extra: test\n",
         )
         for name in ("trtmc.h", "trtmc.hpp"):
