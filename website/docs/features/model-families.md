@@ -198,3 +198,17 @@ checks. Qwen3 or older, MoE, 27B, quantized sources, and other platforms are not
 qualified by this route. Existing quality gates are unchanged.
 See the [family recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_5/edge_llm/README.md)
 for exact revisions, paired execution, and replay gaps.
+
+## Optional Llama Edge execution
+
+The Llama family owns an optional native Edge-LLM 0.10.1 route for original
+unquantized sources with FP16 compute. Recorded ordinary Llama 3.1 8B and
+3.2 1B/3B profiles use SM80; the explicit Llama 3.1 8B + EAGLE3 pair uses SM120.
+Other requests retain native behavior, and a failed explicit pair never silently
+becomes base-only decoding. Quantized Llama routes are outside this publication.
+
+These are bounded historical build/inference results, not catalog-wide support
+or an assertion that every profile is registered in CI. Passing engine payloads
+were retired; publication checks are reported separately. See the
+[family-owned recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/llama/docs/edge-llm.md)
+for exact revisions, capacities, controls and validation boundaries.
