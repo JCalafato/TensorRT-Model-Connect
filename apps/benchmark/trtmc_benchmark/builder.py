@@ -20,8 +20,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from tensorrt_model_connect.build_cli import _resolve_model
+from tensorrt_model_connect import family_cli
 import tensorrt_model_connect
 
+from .catalog import family_build_spec
 from .types import BenchmarkError, ModelDescriptor, ResolvedCase
 
 
@@ -61,6 +63,7 @@ class _BuildPlan:
     timeout_s: int
     identity: str | None
     runtime_root: Path | None
+    cases: tuple[ResolvedCase, ...]
 
 
 class BundleBuilder:
@@ -199,7 +202,9 @@ class BundleBuilder:
         if timeout <= 0:
             raise BenchmarkError("TRTMC_BENCH_BUILD_TIMEOUT_S must be positive")
         identity = _build_identity(model, model_dir, command) if explicit is None else None
-        return _BuildPlan(model, model_dir, bundle, command, timeout, identity, cases[0].runtime_root)
+        return _BuildPlan(
+            model, model_dir, bundle, command, timeout, identity, cases[0].runtime_root, tuple(cases)
+        )
 
     def _build(self, plan: _BuildPlan) -> BundlePreparation:
         plan.bundle.parent.mkdir(parents=True, exist_ok=True)
@@ -211,8 +216,7 @@ class BundleBuilder:
         os.close(descriptor)
         temporary = Path(raw_temporary)
         temporary.unlink()
-        command = list(plan.command)
-        command[command.index("-o") + 1] = str(temporary)
+        command = _build_command(plan.model, plan.model_dir, temporary, plan.cases)
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -307,6 +311,10 @@ def _source_digest(model: ModelDescriptor) -> str:
                 continue
             digest.update(f"{index}/{relative.as_posix()}\0".encode())
             digest.update(path.read_bytes())
+    declaration = roots[1] / "cli.json"
+    if declaration.is_file():
+        digest.update(b"family-cli\0")
+        digest.update(declaration.read_bytes())
     return digest.hexdigest()
 
 
@@ -396,6 +404,23 @@ def _build_command(
     bundle: Path,
     cases: Sequence[ResolvedCase],
 ) -> tuple[str, ...]:
+    spec = family_build_spec(model.family)
+    if spec is not None:
+        names = {argument["name"] for argument in spec["arguments"]}
+        values = dict(model.build_settings)
+        for name, value in (
+            ("model", str(model_dir)), ("output", str(bundle)),
+            ("task", model.task), ("precision", model.precision),
+        ):
+            if name in names:
+                values[name] = value
+        if not {"model", "output"} <= names:
+            raise BenchmarkError(f"{model.family} build command requires model and output arguments")
+        try:
+            arguments = family_cli.serialize_arguments(spec, values)
+        except (TypeError, ValueError) as error:
+            raise BenchmarkError(f"invalid {model.family} build arguments: {error}") from error
+        return (sys.executable, "-m", "tensorrt_model_connect", model.family, "build", *arguments)
     settings = model.build_settings
     command = [
         sys.executable,

@@ -17,6 +17,7 @@ ALLOWED_CORE_IMPORTS = {
     "tensorrt_model_connect.byok",
     "tensorrt_model_connect.bundle_writer",
     "tensorrt_model_connect.model_support",
+    "tensorrt_model_connect.graph_transform",
 }
 PUBLIC_APPLICATION_IMPORTS = {
     "trtmc_benchmark",
@@ -25,6 +26,7 @@ PUBLIC_APPLICATION_IMPORTS = {
     "tensorrt_model_connect.bundle_writer",
     "tensorrt_model_connect.byok",
     "tensorrt_model_connect.graph_transform",
+    "tensorrt_model_connect.family_cli",
 }
 
 
@@ -32,6 +34,53 @@ def family_dirs() -> list[Path]:
     return sorted(
         path for path in FAMILIES.iterdir() if path.is_dir() and not path.name.startswith("_")
     )
+
+
+def _has_owned_build(family: Path) -> bool:
+    from tensorrt_model_connect.family_cli import load_family_cli
+
+    declaration = load_family_cli(family.name)
+    return declaration is not None and any(
+        command["name"] == "build" and command["executor"] == "python"
+        for command in declaration["commands"]
+    )
+
+
+def test_family_cli_dispatchers_do_not_define_owner_policy() -> None:
+    owners = {family.name for family in family_dirs()}
+    paths = (
+        REPO / "core/builder/tensorrt_model_connect/family_cli.py",
+        REPO / "apps/cli/family_cli.cpp",
+    )
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        if path.suffix == ".py":
+            tree = ast.parse(source, filename=str(path))
+            strings = {
+                node.value for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            }
+            modules = {
+                node.module for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module
+            }
+            modules.update(
+                alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                for alias in node.names
+            )
+            assert not any(module.startswith("families") for module in modules), path
+        else:
+            strings = set(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', source))
+            includes = re.findall(r'#include\s+[<"]([^>"]+)', source)
+            assert not any(
+                include.startswith("families/") or (
+                    include.startswith("trtmc/") and include != "trtmc/internal/cli.h"
+                ) for include in includes
+            ), path
+        assert not (strings & owners), path
+        options = {value for value in strings if re.fullmatch(r"--?[a-zA-Z][a-zA-Z0-9_-]*", value)}
+        # -m launches the Python module; it is not a family command option.
+        assert options <= {"--help", "-h", "-m"}, (path, options)
 
 
 def _family_module_name(family: Path, path: Path) -> str:
@@ -160,6 +209,18 @@ def _reachable_family_python(family: Path) -> set[Path]:
         *(family / "tests").rglob("*.py"),
     ]
     pending = [_family_module_name(family, path) for path in root_paths if path.is_file()]
+    declaration = family / "cli.json"
+    if declaration.is_file():
+        from tensorrt_model_connect.family_cli import _validate
+
+        commands = _validate(json.loads(declaration.read_text(encoding="utf-8")))["commands"]
+        for command in commands:
+            if command["executor"] != "python":
+                continue
+            handler_module = command["handler"].split(":", 1)[0]
+            module = f"families.{family.name}.{handler_module}"
+            assert module in modules, f"{declaration}: missing owner handler module {handler_module}"
+            pending.append(module)
     reachable: set[str] = set()
     while pending:
         module = pending.pop()
@@ -175,6 +236,41 @@ def _reachable_family_python(family: Path) -> set[Path]:
             if package in known_modules and package not in reachable:
                 pending.append(package)
     return {modules[module] for module in reachable}
+
+
+def test_cli_declarations_are_family_python_entrypoints(tmp_path: Path) -> None:
+    family = tmp_path / "owner"
+    commands = family / "commands"
+    commands.mkdir(parents=True)
+    for path in (family / "__init__.py", commands / "__init__.py"):
+        path.write_text('"""Owner package."""\n', encoding="utf-8")
+    (family / "model.py").write_text("def build(request, writer): pass\n", encoding="utf-8")
+    (family / "support.py").write_text("def describe(metadata): return None\n", encoding="utf-8")
+    handler = commands / "prepare.py"
+    helper = commands / "helper.py"
+    unused = commands / "unused.py"
+    handler.write_text("from .helper import prepare\n", encoding="utf-8")
+    helper.write_text("def prepare(): return 0\n", encoding="utf-8")
+    unused.write_text("def unused(): pass\n", encoding="utf-8")
+    declaration = family / "cli.json"
+    document = {"version": 1, "commands": [{
+        "name": "prepare", "executor": "python", "handler": "commands.prepare:prepare",
+        "arguments": [],
+    }]}
+    declaration.write_text(json.dumps(document), encoding="utf-8")
+    reachable = _reachable_family_python(family)
+    assert {handler, helper, commands / "__init__.py", family / "__init__.py"} <= reachable
+    assert unused not in reachable
+    declaration.unlink()
+    assert handler not in _reachable_family_python(family)
+    declaration.write_text(json.dumps(document), encoding="utf-8")
+    handler.unlink()
+    try:
+        _reachable_family_python(family)
+    except AssertionError as error:
+        assert "missing owner handler module" in str(error)
+    else:
+        raise AssertionError("a missing declared handler must not be silently ignored")
 
 
 def test_every_family_owns_one_complete_module() -> None:
@@ -267,6 +363,7 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
         "core/builder/tensorrt_model_connect/byok.py",
         "core/builder/tensorrt_model_connect/bundle_writer.py",
         "core/builder/tensorrt_model_connect/graph_transform.py",
+        "core/builder/tensorrt_model_connect/family_cli.py",
         "core/builder/tensorrt_model_connect/model_support.py",
         "core/builder/tests/__init__.py",
         "core/builder/tests/test_build.py",
@@ -275,6 +372,7 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
         "core/builder/tests/test_bundle_writer.py",
         "core/builder/tests/test_byok.py",
         "core/builder/tests/test_graph_transform.py",
+        "core/builder/tests/test_family_cli.py",
         "core/builder/tests/test_model_support.py",
     }
     expected_native = {
@@ -302,6 +400,7 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
         "core/runtime/include/trtmc/bundle.h",
         "core/runtime/include/trtmc/task.h",
         "core/runtime/include/trtmc/internal/config.h",
+        "core/runtime/include/trtmc/internal/cli.h",
         "core/runtime/include/trtmc/internal/action.h",
         "core/runtime/include/trtmc/internal/audio.h",
         "core/runtime/include/trtmc/internal/features.h",
@@ -687,7 +786,7 @@ def test_builders_publish_the_explicit_task_without_guessing() -> None:
     assert violations == []
 
 
-def test_every_builder_handles_every_family_owned_request_field() -> None:
+def test_legacy_builders_handle_every_shared_request_field() -> None:
     build_api = REPO / "core/builder/tensorrt_model_connect/build.py"
     build_api_tree = ast.parse(build_api.read_text(encoding="utf-8"), filename=str(build_api))
     request_class = next(
@@ -710,6 +809,8 @@ def test_every_builder_handles_every_family_owned_request_field() -> None:
 
     violations: list[str] = []
     for family in family_dirs():
+        if _has_owned_build(family):
+            continue
         model = family / "model.py"
         tree = ast.parse(model.read_text(encoding="utf-8"), filename=str(model))
         build = next(
@@ -726,6 +827,25 @@ def test_every_builder_handles_every_family_owned_request_field() -> None:
         }
         for field in sorted(family_owned_fields - handled):
             violations.append(f"{family.name}:{field}")
+    assert violations == []
+
+
+def test_declared_builders_do_not_depend_on_the_shared_request_union() -> None:
+    owners = [family for family in family_dirs() if _has_owned_build(family)]
+    assert owners
+    violations: list[str] = []
+    for family in owners:
+        for path in family.rglob("*.py"):
+            if "tests" in path.relative_to(family).parts:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module in {"tensorrt_model_connect", "tensorrt_model_connect.build"}
+                    and any(alias.name == "BuildRequest" for alias in node.names)
+                ):
+                    violations.append(f"{path.relative_to(REPO)}:{node.lineno}")
     assert violations == []
 
 
@@ -749,6 +869,8 @@ def test_runtime_sized_kv_build_flag_is_direct_and_family_owned() -> None:
 
     owners: list[str] = []
     for family in family_dirs():
+        if _has_owned_build(family):
+            continue
         model = family / "model.py"
         source = model.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(model))
@@ -765,7 +887,7 @@ def test_runtime_sized_kv_build_flag_is_direct_and_family_owned() -> None:
                 f'raise NotImplementedError("{family.name} does not support dynamic_kv_cache")'
                 in source
             )
-    assert owners == [family.name for family in family_dirs()]
+    assert owners == [family.name for family in family_dirs() if not _has_owned_build(family)]
 
 
 def test_runtime_sized_kv_budget_is_direct_and_family_owned() -> None:
