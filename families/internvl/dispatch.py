@@ -161,6 +161,7 @@ def build(request, writer, native) -> None:
             # Edge preparation did not touch writer; publication cannot fallback.
             if adapter is not None:
                 edge_llm.publish(request, writer, files, marker)
+                log_path.unlink()
                 return
             log_path.unlink()  # A platform non-match is not an Edge failure.
     try:
