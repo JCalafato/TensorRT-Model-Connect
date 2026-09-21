@@ -28,6 +28,15 @@ Edge own the network lowering and speculative decoding. Bundle extraction is
 bounded-memory; the runtime, CUDA stream and plugin have scoped lifetimes.
 Requests are serialized against the persistent Edge runtime.
 
+Bounded-memory extraction still needs temporary **disk space** for every extracted
+engine and checkpoint asset, in addition to the original bundle. FP16 Llama 3.1
+8B bundles can require many gigabytes per live runtime instance. Set TMPDIR
+before starting the process to a writable filesystem with enough space for the
+complete extraction, for example TMPDIR=/path/to/scratch/trtmc-tmp after creating
+that directory. /tmp is not necessarily RAM-backed, but its available capacity
+must not be assumed. Extracted files are removed when the runtime is destroyed
+or extraction fails; abrupt process termination can leave files to clean up.
+
 Raw prompts preserve the checkpoint tokenizer's BOS TemplateProcessing policy.
 Chat requests use the pinned Edge chat processing without a second BOS prefix.
 Unmapped generation controls, runtime KV overrides, unsupported tokenizer
