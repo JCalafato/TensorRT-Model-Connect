@@ -565,7 +565,14 @@ def test_bad_cli_execution_rejected_before_primary_model_acquisition(monkeypatch
 
 
 def test_cli_forwards_exact_variant_and_named_local_paths(tmp_path, monkeypatch):
-    (tmp_path / "config.json").write_text('{"model_type":"gpt2"}')
+    from tensorrt_model_connect.model_support import FamilySupport
+
+    (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
+    monkeypatch.setattr(
+        build_cli,
+        "resolve_family",
+        lambda _: ("example_owner", FamilySupport(("example_task",), "example_task")),
+    )
     companion = tmp_path / "checkpoint=local"
     companion.mkdir()
     seen = []
