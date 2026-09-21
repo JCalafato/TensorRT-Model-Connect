@@ -120,8 +120,9 @@ class BuildRequest:
             raise ValueError("graph_transform must be callable when provided")
 
 
-def subprocess_environment(overrides: dict[str, str], *,
-                           prepend_paths: dict[str, str] | None = None) -> dict[str, str]:
+def subprocess_environment(
+    overrides: dict[str, str], *, prepend_paths: dict[str, str] | None = None
+) -> dict[str, str]:
     """Copy the parent environment for one child without mutating process state.
 
     Callers own explicit tool settings; this helper only merges values and
@@ -164,7 +165,10 @@ def detect_local_platform() -> dict:
     device = checked(runtime.cudaGetDevice())
     gpu = checked(runtime.cudaGetDeviceProperties(device))
     cuda = checked(runtime.cudaRuntimeGetVersion())
-    release = platform.freedesktop_os_release() if sys.platform == "linux" else {}
+    try:
+        release = platform.freedesktop_os_release() if sys.platform == "linux" else {}
+    except OSError:
+        release = {}
     return {
         "os": sys.platform,
         "os_version": release.get("VERSION_ID", platform.release()),

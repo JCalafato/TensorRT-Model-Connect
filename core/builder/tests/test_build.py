@@ -338,10 +338,19 @@ def native_platform_bindings(monkeypatch):
     return runtime
 
 
-def test_native_platform_uses_executing_cuda_device_and_full_sdk(native_platform_bindings):
+@pytest.mark.parametrize("release_available", [True, False])
+def test_native_platform_uses_executing_cuda_device_and_full_sdk(
+    native_platform_bindings, monkeypatch, release_available
+):
+    if not release_available:
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(
+            build_core.platform, "freedesktop_os_release", Mock(side_effect=OSError("missing"))
+        )
     assert build_core.detect_local_platform() == {
         "os": "linux",
-        "os_version": "24.04",
+        "os_version": "24.04" if release_available else "fallback-release",
         "arch": "x86_64",
         "sm": 86,
         "cuda_version": "13.3",

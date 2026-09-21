@@ -102,6 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         base_parser.error("MODEL must immediately follow prepare-structure")
     preliminary, _ = base_parser.parse_known_args(arguments)
+    execution = _execution_inputs(preliminary)
     model_dir = _resolve_model(preliminary.model, preliminary.revision)
     metadata = load_model_metadata(model_dir)
     try:
@@ -115,7 +116,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     family_module = _load_family(family) if preliminary.command == "prepare-structure" else None
     args = _parser(family_module).parse_args(arguments)
-    execution = _execution_inputs(args)
     if args.command == "prepare-structure":
         prepare = getattr(family_module, "prepare_structure_request", None)
         if not callable(prepare):
