@@ -29,7 +29,6 @@ set(_onnx false)
 if("@TRTMC_EDGELLM_ONNX@")
   set(_onnx true)
 endif()
-execute_process(COMMAND "@_edge_python@" -I -c "import tensorrt; print(tensorrt.__version__)"
-  OUTPUT_VARIABLE _trt_version OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+# Bundle compatibility uses the complete native SDK version, not the Python wheel label.
 # Paths are relative to the installation prefix, preserving relocatability.
-file(WRITE "@_edge_prefix@/share/trtmc/edge-llm.json" "{\n  \"schema_version\": 1,\n  \"version\": \"@_edge_version@\",\n  \"revision\": \"@_edge_revision@\",\n  \"arch\": \"@CMAKE_SYSTEM_PROCESSOR@\",\n  \"architectures\": [@TRTMC_EDGELLM_CUDA_ARCHITECTURE@],\n  \"cuda_version\": \"@CUDAToolkit_VERSION_MAJOR@.@CUDAToolkit_VERSION_MINOR@\",\n  \"tensorrt_version\": \"${_trt_version}\",\n  \"python\": \"libexec/trtmc-edge-llm/bin/python\",\n  \"builder\": \"bin/edgellm-builder\",\n  \"all_native_kernels\": ${_all_kernels},\n  \"onnx\": ${_onnx},\n  \"onnx_builder\": \"bin/edgellm-onnx-build\",\n  \"plugin\": \"lib/libNvInfer_edgellm_plugin.so\"\n}\n")
+file(WRITE "@_edge_prefix@/share/trtmc/edge-llm.json" "{\n  \"schema_version\": 1,\n  \"version\": \"@_edge_version@\",\n  \"revision\": \"@_edge_revision@\",\n  \"arch\": \"@CMAKE_SYSTEM_PROCESSOR@\",\n  \"architectures\": [@TRTMC_EDGELLM_CUDA_ARCHITECTURE@],\n  \"cuda_version\": \"@CUDAToolkit_VERSION_MAJOR@.@CUDAToolkit_VERSION_MINOR@\",\n  \"tensorrt_version\": \"@_edge_trt_version@\",\n  \"python\": \"libexec/trtmc-edge-llm/bin/python\",\n  \"builder\": \"bin/edgellm-builder\",\n  \"all_native_kernels\": ${_all_kernels},\n  \"onnx\": ${_onnx},\n  \"onnx_builder\": \"bin/edgellm-onnx-build\",\n  \"plugin\": \"lib/libNvInfer_edgellm_plugin.so\"\n}\n")
