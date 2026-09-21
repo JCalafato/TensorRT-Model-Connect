@@ -182,7 +182,11 @@ class EdgeTask final : public ITextGeneration, public IVisionLanguageGeneration 
     }
 
     const char* task() const noexcept override { return IVisionLanguageGeneration::kTask; }
-    std::int32_t default_max_new_tokens() const override { return capacity_; }
+    std::int32_t default_max_new_tokens() const override {
+        // Some profiles allow inputs up to the entire KV capacity. Reserve one
+        // output token there; a prompt occupying every slot still fails validation.
+        return std::max(1, capacity_ - input_limit_);
+    }
 
     /// Drain work from failed requests before destroying the runtime and its weight buffers.
     ~EdgeTask() override { cudaStreamSynchronize(stream_.get()); }
