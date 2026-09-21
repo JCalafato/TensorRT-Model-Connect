@@ -99,6 +99,7 @@ def build(request, writer, native) -> None:
         else:
             if adapter is not None:
                 edge_llm.publish(request, writer, files, marker)
+                log_path.unlink()
                 return
             log_path.unlink()
     try:
@@ -134,3 +135,4 @@ def build_dflash(request, writer, draft: Path) -> None:
                          "Native paired execution is unavailable; refusing base-only fallback.", error, log_path)
             raise NotImplementedError("Native Nemotron-H DFlash fallback is unavailable") from error
         edge_llm.publish(request, writer, files, marker)
+        log_path.unlink()

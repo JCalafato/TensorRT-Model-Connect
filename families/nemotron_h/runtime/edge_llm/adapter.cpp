@@ -219,7 +219,10 @@ std::string native_chat_format(const BundleReader& bundle) {
     const auto text = metadata.at("chat_template").get<std::string>();
     if (text.empty())
         throw std::runtime_error("Nemotron-H Edge requires resolved source chat_template");
-    return nemotron_h_detect_chat_template_format(text);
+    const auto format = nemotron_h_detect_chat_template_format(text);
+    if (format.empty())
+        throw std::runtime_error("Nemotron-H Edge does not recognize source chat_template");
+    return format;
 }
 
 /// Reuse the original family BPE implementation, including its special postprocessor.
