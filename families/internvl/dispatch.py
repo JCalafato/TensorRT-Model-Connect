@@ -124,11 +124,6 @@ def build(request, writer, native) -> None:
     if not candidate(request, raw):
         native(request, writer)
         return
-    capacity = config.get("max_position_embeddings")
-    if type(capacity) is not int or capacity <= 0:
-        raise ValueError("checkpoint max_position_embeddings must be a positive integer")
-    if request.max_sequence_length and request.max_sequence_length > capacity:
-        raise ValueError("max_sequence_length exceeds checkpoint context capacity")
     failure = None
     descriptor, name = tempfile.mkstemp(
         prefix=f".{request.output_path.name}.edge-", suffix=".log", dir=request.output_path.parent
@@ -145,6 +140,14 @@ def build(request, writer, native) -> None:
             if target["sm"] != (120 if config["hidden_size"] == 5120 else 80):
                 adapter = None
             if adapter is not None:
+                # This is an Edge profile restriction, not a native build limit.
+                capacity = config.get("max_position_embeddings")
+                if type(capacity) is not int or capacity <= 0:
+                    raise ValueError(
+                        "checkpoint max_position_embeddings must be a positive integer"
+                    )
+                if request.max_sequence_length and request.max_sequence_length > capacity:
+                    raise ValueError("max_sequence_length exceeds checkpoint context capacity")
                 files, marker = adapter(request, raw, target, Path(directory), log_path)
         except Exception as error:
             failure = error
