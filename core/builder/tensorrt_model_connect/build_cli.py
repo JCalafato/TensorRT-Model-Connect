@@ -92,7 +92,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     preliminary, unknown = base_parser.parse_known_args(preliminary_arguments)
     if unknown and arguments[0] == "build" and arguments[1].startswith("-"):
         base_parser.error("MODEL must immediately follow build when family options are used")
-    model_dir = _resolve_model(preliminary.model, preliminary.revision)
+    if family_help and not Path(preliminary.model).is_dir():
+        # Remote or missing inputs cannot provide local metadata. Help must
+        # remain side-effect free instead of acquiring a checkpoint.
+        base_parser.parse_args(arguments)
+        return 0
+    model_dir = (
+        Path(preliminary.model) if family_help
+        else _resolve_model(preliminary.model, preliminary.revision)
+    )
     metadata = load_model_metadata(model_dir)
     try:
         family, support = (
