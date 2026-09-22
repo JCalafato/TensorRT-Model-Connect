@@ -633,12 +633,12 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
     }
     expected_cmake = {
         "cmake/trtmcConfig.cmake.in",
-        "cmake/EdgeLLM.cmake",
-        "cmake/edgellm/CheckNative.cmake",
-        "cmake/edgellm/EdgeLLMConfig.cmake.in",
-        "cmake/edgellm/Install.cmake.in",
-        "cmake/edgellm/Prepare.cmake.in",
-        "cmake/edgellm/README.md",
+        "cmake/edge_llm/EdgeLLM.cmake",
+        "cmake/edge_llm/CheckNative.cmake",
+        "cmake/edge_llm/EdgeLLMConfig.cmake.in",
+        "cmake/edge_llm/Install.cmake.in",
+        "cmake/edge_llm/Prepare.cmake.in",
+        "cmake/edge_llm/README.md",
     }
     expected_third_party = {
         "third_party/stb/stb_image.h",

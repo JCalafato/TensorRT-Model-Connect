@@ -12,22 +12,26 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from .build import BuildExecutionInputs, BuildRequest, NamedCheckpoint, _load_family, build
+from .build import BuildRequest, _load_family, build
 from .model_support import (
     AmbiguousFamilyError,
     FamilyResolutionError,
+    FamilySupport,
     load_model_metadata,
     resolve_family,
     resolve_model,
 )
 
 
-def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
+def _parser(
+    prepare_family: object | None = None, *, build_support: FamilySupport | None = None,
+    require_output: bool = True,
+) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trtmc")
     commands = parser.add_subparsers(dest="command", required=True)
     build_parser = commands.add_parser("build", help="Build one TensorRT bundle")
     build_parser.add_argument("model", help="Hugging Face model ID or local snapshot")
-    build_parser.add_argument("-o", "--output", type=Path, required=True)
+    build_parser.add_argument("-o", "--output", type=Path, required=require_output)
     build_parser.add_argument(
         "--family", help="Select one compatible family instead of automatic resolution"
     )
@@ -46,14 +50,8 @@ def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
     build_parser.add_argument("--fp32-layer", type=int, action="append", default=[])
     build_parser.add_argument("--dynamic-kv-cache", action="store_true")
     build_parser.add_argument("--verbose", action="store_true")
-    build_parser.add_argument("--execution-variant", help="Explicit family-owned execution variant")
-    build_parser.add_argument(
-        "--companion",
-        action="append",
-        default=[],
-        metavar="ROLE=LOCAL_DIR",
-        help="Named existing local checkpoint; repeat for multiple distinct roles",
-    )
+    if build_support is not None and callable(build_support.add_build_arguments):
+        build_support.add_build_arguments(build_parser)
     prepare_parser = commands.add_parser(
         "prepare-structure",
         help="Prepare one structure request without rebuilding its model bundle",
@@ -72,28 +70,14 @@ def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
     return parser
 
 
-def _execution_inputs(args: argparse.Namespace) -> BuildExecutionInputs | None:
-    """Parse only explicit local inputs; no variant list or model acquisition."""
-    if args.command != "build":
-        return None
-    if args.execution_variant is None:
-        if args.companion:
-            raise ValueError("--companion requires --execution-variant")
-        return None
-    checkpoints = []
-    for value in args.companion:
-        role, separator, directory = value.partition("=")
-        if not separator or not role or not directory:
-            raise ValueError("--companion must be ROLE=LOCAL_DIR")
-        if "://" in directory:
-            raise ValueError("--companion requires a local directory, not a URI")
-        checkpoints.append(NamedCheckpoint(role, Path(directory)))
-    return BuildExecutionInputs(args.execution_variant, tuple(checkpoints))
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    base_parser = _parser()
+    family_help = (
+        len(arguments) > 1 and arguments[0] == "build"
+        and not arguments[1].startswith("-")
+        and any(arg in {"-h", "--help"} for arg in arguments)
+    )
+    base_parser = _parser(require_output=not family_help)
     if (
         len(arguments) > 1
         and arguments[0] == "prepare-structure"
@@ -101,8 +85,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         and arguments[1].startswith("-")
     ):
         base_parser.error("MODEL must immediately follow prepare-structure")
-    preliminary, _ = base_parser.parse_known_args(arguments)
-    execution = _execution_inputs(preliminary)
+    preliminary_arguments = (
+        [arg for arg in arguments if arg not in {"-h", "--help"}] if family_help else arguments
+    )
+    preliminary, unknown = base_parser.parse_known_args(preliminary_arguments)
+    if unknown and arguments[0] == "build" and arguments[1].startswith("-"):
+        base_parser.error("MODEL must immediately follow build when family options are used")
     model_dir = _resolve_model(preliminary.model, preliminary.revision)
     metadata = load_model_metadata(model_dir)
     try:
@@ -115,7 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_family_error(error, arguments)
         return 2
     family_module = _load_family(family) if preliminary.command == "prepare-structure" else None
-    args = _parser(family_module).parse_args(arguments)
+    args = _parser(family_module, build_support=support).parse_args(arguments)
     if args.command == "prepare-structure":
         prepare = getattr(family_module, "prepare_structure_request", None)
         if not callable(prepare):
@@ -158,10 +146,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         dynamic_kv_cache=args.dynamic_kv_cache,
         verbose=args.verbose,
     )
-    if execution is None:
-        build(request)
-    else:
-        build(request, execution=execution)
+    if callable(support.prepare_build_request):
+        request = support.prepare_build_request(request, args)
+        if not isinstance(request, BuildRequest) or request.family != family:
+            raise TypeError("family prepare_build_request must preserve the owning BuildRequest")
+    build(request)
     return 0
 
 

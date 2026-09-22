@@ -11,7 +11,6 @@ model ID/local snapshot
   -> choose family default task or validate --task
   -> import the selected families.<family>.model
   -> call build(BuildRequest, BundleWriter)
-     or the explicitly requested family build_with_inputs hook
   -> atomically publish format-1 bundle
 ```
 
@@ -37,10 +36,11 @@ sizes, family-owned quantization selection, FP32 layer overrides, direct
 dynamic-KV opt-in, and optional graph transform. Each family must implement or
 explicitly reject every non-default request it receives.
 
-Optional `BuildExecutionInputs` travel separately from `BuildRequest`. Core
-checks descriptor types, unique roles and existing local directories; only
-the selected family interprets variant names and companion compatibility.
-See the [Python Build API](../api/python-builder.md#optional-execution-inputs).
+Optional CLI extensions are declared by the owning family's lightweight
+support module. The family registers its arguments and prepares a typed request
+before any GPU builder is imported. Core retains one ordinary family build
+entrypoint; execution selection, companion validation and runtime composition
+remain inside the family. No other family needs to change.
 
 ## Family build
 

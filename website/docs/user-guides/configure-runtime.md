@@ -49,7 +49,7 @@ the SDK rejects same-version development headers with an incompatible C++ ABI.
 - `CMAKE_PREFIX_PATH` points builders and runtime compilation to the installed
   SDK. Reuse fails explicitly if a requested capability is absent.
 
-Follow the repository's [pinned SDK installation instructions](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/cmake/edgellm/README.md)
+Follow the repository's [pinned SDK installation instructions](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/cmake/edge_llm/README.md)
 for dependencies, native architecture selection and offline provisioning.
 Each family decides whether and how to use the package. Installing the SDK
 is not evidence that a model, precision, input modality or execution variant
