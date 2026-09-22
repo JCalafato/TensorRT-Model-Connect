@@ -590,6 +590,7 @@ def test_build_family_options_are_not_global(monkeypatch, tmp_path):
 
 
 def test_build_family_help_does_not_require_output_or_load_builder(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(build_cli, "_resolve_model", lambda *_: pytest.fail("help acquired a model"))
     (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
     support = FamilySupport(
         ("example_task",), "example_task",
@@ -625,3 +626,20 @@ def test_build_family_hook_cannot_replace_owner_or_contract(monkeypatch, tmp_pat
     monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("invalid request reached build"))
     with pytest.raises(TypeError, match="preserve the owning BuildRequest"):
         build_cli.main(["build", str(tmp_path), "-o", str(tmp_path / "out")])
+
+
+@pytest.mark.parametrize("help_option", ["-h", "--help"])
+@pytest.mark.parametrize("explicit_family", [False, True])
+def test_remote_model_help_never_acquires_checkpoint(monkeypatch, capsys, help_option, explicit_family):
+    monkeypatch.setattr(build_cli, "_resolve_model", lambda *_: pytest.fail("help downloaded model"))
+    monkeypatch.setattr(build_cli, "resolve_family", lambda *_: pytest.fail("remote help resolved owner"))
+    monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("help started build"))
+    arguments = ["build", "example-organization/uncached-model", help_option]
+    if explicit_family:
+        arguments += ["--family", "example_owner"]
+    with pytest.raises(SystemExit) as error:
+        build_cli.main(arguments)
+    assert error.value.code == 0
+    output = capsys.readouterr()
+    assert "--precision" in output.out
+    assert not output.err

@@ -44,7 +44,9 @@ extra fields, validation and execution choices.
 
 Put the model immediately after `build` when using family-specific options.
 `trtmc build /path/to/model --help` shows the resolved family's options without
-importing its GPU builder. Model resolution precedes family-specific argument
+importing its GPU builder. Help never downloads a checkpoint: remote model IDs
+or missing local directories show generic build help instead. Model resolution
+precedes family-specific argument
 validation; request preparation precedes backend import and bundle creation.
 
 ## Optional graph transform
