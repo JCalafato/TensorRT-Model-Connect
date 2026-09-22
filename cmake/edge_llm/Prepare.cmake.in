@@ -20,6 +20,16 @@ set(_pip_options --isolated install --no-user)
 if(NOT "@TRTMC_EDGELLM_WHEELHOUSE@" STREQUAL "")
   list(APPEND _pip_options --no-index --find-links "@TRTMC_EDGELLM_WHEELHOUSE@")
 endif()
+# Older supported Python bootstraps may seed pip before --report was introduced.
+execute_process(COMMAND "@_edge_python@" -I -m pip --version
+  OUTPUT_VARIABLE _pip_version OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+if(NOT _pip_version MATCHES "^pip ([0-9]+\\.[0-9]+(\\.[0-9]+)?)")
+  message(FATAL_ERROR "Cannot determine the isolated environment pip version")
+endif()
+if(CMAKE_MATCH_1 VERSION_LESS "22.2")
+  # _pip_options keeps offline upgrades restricted to the explicit wheelhouse.
+  run("@_edge_python@" -I -m pip ${_pip_options} --upgrade "pip>=22.2")
+endif()
 file(GLOB _trt_wheels "@TRTMC_EDGELLM_TRT_ROOT@/python/tensorrt-*-cp@Python3_VERSION_MAJOR@@Python3_VERSION_MINOR@-none-linux_@CMAKE_SYSTEM_PROCESSOR@.whl")
 list(LENGTH _trt_wheels _wheel_count)
 if(NOT _wheel_count EQUAL 1)
