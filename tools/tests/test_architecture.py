@@ -1665,6 +1665,14 @@ def _implemented_task_ids(source: str, interfaces: dict[str, str]) -> set[str]:
     }
 
 
+def _family_runtime_source(family: Path) -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in (family / "runtime").rglob("*")
+        if path.is_file() and path.suffix in {".h", ".hpp", ".cpp", ".cu"}
+    )
+
+
 def test_task_contract_inventory_recognizes_implemented_interfaces_not_mentions() -> None:
     declarations = _declared_task_interfaces(
         '''
@@ -1759,6 +1767,167 @@ def test_every_manifest_task_has_a_concrete_family_implementation() -> None:
             if task not in implemented:
                 violations.append(f"{manifest.relative_to(REPO)}:{task}")
     assert violations == []
+
+
+def _semantic_task_interfaces() -> dict[str, str]:
+    interfaces: dict[str, str] = {}
+    for header in sorted((REPO / "core/runtime/include/trtmc/internal").glob("*.h")):
+        interfaces.update(_declared_task_interfaces(header.read_text(encoding="utf-8")))
+    return interfaces
+
+
+def _imported_resolvers(tree: ast.AST, family: str) -> tuple[set[str], set[str]]:
+    names: set[str] = set()
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == f"families.{family}.support":
+                names.update(alias.asname or alias.name for alias in node.names)
+            elif module == "tensorrt_model_connect.model_support":
+                names.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name == "resolve_family"
+                )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == f"families.{family}.support":
+                    modules.add(alias.asname or alias.name.split(".", 1)[0])
+    return names, modules
+
+
+def _bound_names(target: ast.expr) -> set[str]:
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for element in target.elts:
+            names.update(_bound_names(element))
+        return names
+    return set()
+
+
+def _is_resolver_call(node: ast.AST, resolvers: set[str], modules: set[str]) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    if isinstance(node.func, ast.Name):
+        return node.func.id in resolvers
+    return (
+        isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id in modules
+    )
+
+
+def _support_test_covers_identity(source: str, family: str, filename: str) -> bool:
+    try:
+        tree = ast.parse(source, filename=filename)
+    except SyntaxError:
+        return False
+
+    resolvers, modules = _imported_resolvers(tree, family)
+    if not resolvers and not modules:
+        return False
+
+    resolved: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and _is_resolver_call(node.value, resolvers, modules):
+            for target in node.targets:
+                resolved.update(_bound_names(target))
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert):
+            continue
+        for compare in ast.walk(node.test):
+            if not isinstance(compare, ast.Compare):
+                continue
+            for operand in [compare.left, *compare.comparators]:
+                if not (isinstance(operand, ast.Attribute) and operand.attr == "default_task"):
+                    continue
+                value = operand.value
+                if isinstance(value, ast.Name) and value.id in resolved:
+                    return True
+                if _is_resolver_call(value, resolvers, modules):
+                    return True
+    return False
+
+
+def test_support_test_content_check_rejects_placeholders() -> None:
+    assert not _support_test_covers_identity("", "owner", "empty.py")
+    assert not _support_test_covers_identity(
+        "def test_nothing():\n    assert True\n", "owner", "unrelated.py"
+    )
+    # A text-only placeholder must not satisfy the guard.
+    assert not _support_test_covers_identity(
+        'def test_placeholder():\n    assert result.default_task == "task"\n',
+        "owner",
+        "placeholder.py",
+    )
+    # Importing the resolver is not enough when the assertion is not tied to it.
+    assert not _support_test_covers_identity(
+        "from families.owner.support import describe\n\n"
+        "def test_placeholder():\n"
+        "    describe(None)\n"
+        '    assert result.default_task == "task"\n',
+        "owner",
+        "unbound.py",
+    )
+    # Binding an unrelated object must not satisfy the guard either.
+    assert not _support_test_covers_identity(
+        "from families.owner.support import describe\n\n"
+        "def test_placeholder():\n"
+        "    describe(None)\n"
+        "    result = object()\n"
+        '    assert result.default_task == "task"\n',
+        "owner",
+        "wrong-object.py",
+    )
+    # A resolver result asserted directly is valid.
+    assert _support_test_covers_identity(
+        "from families.owner.support import describe\n\n"
+        "def test_default():\n"
+        '    assert describe(None).default_task == "task"\n',
+        "owner",
+        "direct.py",
+    )
+    # A resolver result bound to a local name and asserted through it is valid.
+    assert _support_test_covers_identity(
+        "from families.owner.support import describe\n\n"
+        "def test_default():\n"
+        "    support = describe(None)\n"
+        '    assert support.default_task == "task"\n',
+        "owner",
+        "bound.py",
+    )
+
+
+def test_migrated_families_own_dependency_free_support_tests() -> None:
+    """A semantic Task family keeps CPU-visible identity and default-task tests.
+
+    ``add-model-family.md`` requires checkpoint identity and default-task
+    assertions in a dependency-free ``tests/test_support.py``. The public CPU
+    gate discovers every family that ships that file, so a family migrated to
+    the Task SDK must not keep those assertions only in a TensorRT-gated
+    ``tests/test_model.py`` module. The file must resolve its own identity and
+    assert its default task; an empty or unrelated placeholder is not enough.
+    """
+    interfaces = _semantic_task_interfaces()
+    violations = []
+    for family in family_dirs():
+        if not _implemented_task_ids(_family_runtime_source(family), interfaces):
+            continue
+        support_test = family / "tests/test_support.py"
+        if not support_test.is_file():
+            violations.append(f"families/{family.name}/tests/test_support.py: missing")
+        elif not _support_test_covers_identity(
+            support_test.read_text(encoding="utf-8"), family.name, str(support_test)
+        ):
+            violations.append(
+                f"families/{family.name}/tests/test_support.py: "
+                "needs an identity lookup and a default_task assertion"
+            )
+    assert violations == [], "invalid semantic Task support tests: " + "; ".join(violations)
 
 
 def test_manifests_contain_only_family_test_inputs_not_central_orchestration() -> None:
