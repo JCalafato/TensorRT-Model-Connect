@@ -79,7 +79,7 @@ then pass `--execution-variant mtp` or `--execution-variant dspark` with
 DSpark preserves the supported sampling controls. Exact checkpoint revisions,
 capacity bounds, validation results, unsupported controls and source-faithful
 chat-template handling are documented in the
-[owning Gemma recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/gemma/EDGE_LLM.md).
+[owning Gemma recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/gemma/edge_llm/README.md).
 These local qualifications are separate from the registered manifest inventory
 and do not imply that CI executes the paired cases.
 

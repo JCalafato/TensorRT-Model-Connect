@@ -14,13 +14,15 @@ import subprocess
 import tempfile
 import traceback
 
-from tensorrt_model_connect.build import cmake_prefixes, detect_local_platform, subprocess_environment
+from tensorrt_model_connect.build import (
+    cmake_prefixes, detect_local_platform, subprocess_environment,
+)
 
 EDGE_REVISION = "e8b29522938901f6df19ebeedd4b69bc8edbcd97"
 
 
 def local_target() -> dict:
-    """Return the executing worker identity supplied by generic build mechanics."""
+    """Return the executing worker identity for this family-owned offload."""
     return detect_local_platform()
 
 

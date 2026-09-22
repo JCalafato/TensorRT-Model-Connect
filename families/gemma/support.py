@@ -10,4 +10,5 @@ describe = family_support(
     model_types=("gemma", "gemma2", "gemma3", "gemma3_text", "gemma4_unified"),
     tasks=("text_generation",),
     default_task="text_generation",
+    build_cli_module="edge_llm.cli",
 )
