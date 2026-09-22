@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import shlex
 import sys
@@ -16,7 +17,6 @@ from .build import BuildRequest, _load_family, build
 from .model_support import (
     AmbiguousFamilyError,
     FamilyResolutionError,
-    FamilySupport,
     load_model_metadata,
     resolve_family,
     resolve_model,
@@ -24,7 +24,7 @@ from .model_support import (
 
 
 def _parser(
-    prepare_family: object | None = None, *, build_support: FamilySupport | None = None,
+    prepare_family: object | None = None, *, build_hooks: object | None = None,
     require_output: bool = True,
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trtmc")
@@ -50,8 +50,9 @@ def _parser(
     build_parser.add_argument("--fp32-layer", type=int, action="append", default=[])
     build_parser.add_argument("--dynamic-kv-cache", action="store_true")
     build_parser.add_argument("--verbose", action="store_true")
-    if build_support is not None and callable(build_support.add_build_arguments):
-        build_support.add_build_arguments(build_parser)
+    add_build_arguments = getattr(build_hooks, "add_build_arguments", None)
+    if callable(add_build_arguments):
+        add_build_arguments(build_parser)
     prepare_parser = commands.add_parser(
         "prepare-structure",
         help="Prepare one structure request without rebuilding its model bundle",
@@ -103,7 +104,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_family_error(error, arguments)
         return 2
     family_module = _load_family(family) if preliminary.command == "prepare-structure" else None
-    args = _parser(family_module, build_support=support).parse_args(arguments)
+    build_hooks = (
+        importlib.import_module(f"families.{family}.{support.build_cli_module}")
+        if preliminary.command == "build" and support.build_cli_module is not None else None
+    )
+    args = _parser(family_module, build_hooks=build_hooks).parse_args(arguments)
     if args.command == "prepare-structure":
         prepare = getattr(family_module, "prepare_structure_request", None)
         if not callable(prepare):
@@ -146,8 +151,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         dynamic_kv_cache=args.dynamic_kv_cache,
         verbose=args.verbose,
     )
-    if callable(support.prepare_build_request):
-        request = support.prepare_build_request(request, args)
+    prepare_build_request = getattr(build_hooks, "prepare_build_request", None)
+    if callable(prepare_build_request):
+        request = prepare_build_request(request, args)
         if not isinstance(request, BuildRequest) or request.family != family:
             raise TypeError("family prepare_build_request must preserve the owning BuildRequest")
     build(request)

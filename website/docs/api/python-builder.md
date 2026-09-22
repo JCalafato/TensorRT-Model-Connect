@@ -32,8 +32,8 @@ checkpoint; `BuildRequest` does not perform another discovery pass.
 ## Family-owned build arguments
 
 A family may provide `add_build_arguments(parser)` and
-`prepare_build_request(request, args)` through its lightweight `FamilySupport`
-declaration. The CLI resolves the owner, registers only that family's options,
+`prepare_build_request(request, args)` in a family-local module named by the lightweight
+`FamilySupport.build_cli_module` declaration. The CLI resolves the owner, registers only that family's options,
 and lets it return a family-owned `BuildRequest` subclass. The hook must retain
 the resolved family. Ordinary families need no changes.
 

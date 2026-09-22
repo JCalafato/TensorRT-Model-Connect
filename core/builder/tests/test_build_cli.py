@@ -559,8 +559,11 @@ def test_build_family_hooks_forward_a_typed_request(monkeypatch, tmp_path, expli
 
     support = FamilySupport(
         ("example_task",), "example_task",
-        add_build_arguments=add_arguments, prepare_build_request=prepare,
+        build_cli_module="example_cli",
     )
+    monkeypatch.setitem(sys.modules, "families.example_owner.example_cli", SimpleNamespace(
+        add_build_arguments=add_arguments, prepare_build_request=prepare,
+    ))
     (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
     monkeypatch.setattr(build_cli, "resolve_family", lambda metadata, *args: ("example_owner", support))
     monkeypatch.setattr(build_cli, "_load_family", lambda *_: pytest.fail("GPU builder imported by CLI"))
@@ -590,9 +593,12 @@ def test_build_family_help_does_not_require_output_or_load_builder(monkeypatch, 
     (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
     support = FamilySupport(
         ("example_task",), "example_task",
+        build_cli_module="example_cli",
+    )
+    monkeypatch.setitem(sys.modules, "families.example_owner.example_cli", SimpleNamespace(
         add_build_arguments=lambda parser: parser.add_argument("--example-setting"),
         prepare_build_request=lambda *_: pytest.fail("help prepared a build"),
-    )
+    ))
     monkeypatch.setattr(build_cli, "resolve_family", lambda _: ("example_owner", support))
     monkeypatch.setattr(build_cli, "_load_family", lambda *_: pytest.fail("help imported GPU builder"))
     with pytest.raises(SystemExit) as error:
@@ -608,10 +614,13 @@ def test_build_family_hook_cannot_replace_owner_or_contract(monkeypatch, tmp_pat
     (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
     support = FamilySupport(
         ("example_task",), "example_task",
+        build_cli_module="example_cli",
+    )
+    monkeypatch.setitem(sys.modules, "families.example_owner.example_cli", SimpleNamespace(
         prepare_build_request=lambda request, _: (
             replace(request, family="another_owner") if wrong_owner else object()
         ),
-    )
+    ))
     monkeypatch.setattr(build_cli, "resolve_family", lambda _: ("example_owner", support))
     monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("invalid request reached build"))
     with pytest.raises(TypeError, match="preserve the owning BuildRequest"):
