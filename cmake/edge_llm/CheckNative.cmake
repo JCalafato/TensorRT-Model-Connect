@@ -71,3 +71,42 @@ function(_edgellm_check_json_headers include_dir vendor_dir)
     message(FATAL_ERROR "EdgeLLM requires the pinned nlohmann_json headers, not only the same version label. Set nlohmann_json_DIR to an installation of the pinned Edge 3rdParty/nlohmannJson dependency. Mismatch: ${_relative}")
   endforeach()
 endfunction()
+
+# Verify the selected native library itself, not only its accompanying headers.
+function(_edgellm_check_trt_library library expected)
+  if(CMAKE_CROSSCOMPILING)
+    message(FATAL_ERROR "TensorRT library validation requires native execution")
+  endif()
+  set(_probe "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/edgellm-library-version.cpp")
+  file(WRITE "${_probe}" [=[
+#include <dlfcn.h>
+#include <iostream>
+int main(int argc, char** argv) {
+  if (argc != 2) return 1;
+  void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+  if (!library) { std::cerr << dlerror(); return 2; }
+  const char* names[] = {"getInferLibMajorVersion", "getInferLibMinorVersion",
+                         "getInferLibPatchVersion", "getInferLibBuildVersion"};
+  for (int i = 0; i < 4; ++i) {
+    auto version = reinterpret_cast<int (*)()>(dlsym(library, names[i]));
+    if (!version) { std::cerr << "Missing " << names[i]; dlclose(library); return 3; }
+    if (i) std::cout << ".";
+    std::cout << version();
+  }
+  dlclose(library);
+  return 0;
+}
+]=])
+  unset(_edge_version_run CACHE)
+  unset(_edge_version_compiled CACHE)
+  try_run(_edge_version_run _edge_version_compiled
+    "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/edgellm-library-version" "${_probe}"
+    LINK_LIBRARIES "${CMAKE_DL_LIBS}" ARGS "${library}"
+    RUN_OUTPUT_VARIABLE _actual COMPILE_OUTPUT_VARIABLE _compile_output)
+  if(NOT _edge_version_compiled OR NOT _edge_version_run STREQUAL "0")
+    message(FATAL_ERROR "Cannot verify selected TensorRT library ${library}: ${_actual} ${_compile_output}")
+  endif()
+  if(NOT _actual STREQUAL expected)
+    message(FATAL_ERROR "EdgeLLM requires TensorRT library ${expected}; selected ${library} reports ${_actual}")
+  endif()
+endfunction()
