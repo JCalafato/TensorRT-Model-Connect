@@ -29,35 +29,23 @@ resolved API directly.
 decides whether that directory is a Hugging Face snapshot or a prepared
 checkpoint; `BuildRequest` does not perform another discovery pass.
 
-## Optional execution inputs
+## Family-owned build arguments
 
-`build(request, execution=...)` accepts an optional, frozen
-`BuildExecutionInputs` descriptor. It contains a family-owned `variant` string
-and a tuple of `NamedCheckpoint(role, model_dir)` descriptors. Import these
-public types from `tensorrt_model_connect`. Companion directories must already
-exist locally; the core does not download them or infer compatible model pairs.
-Roles must be unique. Variant and role names are lowercase identifiers.
+A family may provide `add_build_arguments(parser)` and
+`prepare_build_request(request, args)` through its lightweight `FamilySupport`
+declaration. The CLI resolves the owner, registers only that family's options,
+and lets it return a family-owned `BuildRequest` subclass. The hook must retain
+the resolved family. Ordinary families need no changes.
 
-Providing execution inputs requires the selected family to implement
-`build_with_inputs(request, writer, execution)`. The family validates the
-variant, checkpoint roles, compatibility and execution semantics. A missing
-hook fails before bundle creation; the core never substitutes ordinary
-base-only generation or another variant. With no execution inputs, the
-existing `build(request, writer)` family call is unchanged.
+Core always calls the same `build(request)` and family `build(request, writer)`
+entrypoints. There is no shared execution-variant list, companion interpretation,
+GPU offload selection, or alternative-builder dispatch. The family owns all
+extra fields, validation and execution choices.
 
-The build CLI exposes the same optional contract:
-
-```text
-trtmc build LOCAL_TARGET -o model.bundle \
-  --execution-variant FAMILY_VARIANT \
-  --companion ROLE=LOCAL_COMPANION_DIR
-```
-
-Replace the uppercase placeholders with values from the selected family's
-recipe; they are not literal supported identifiers. Repeat `--companion` only
-for distinct roles. A companion requires `--execution-variant`; URLs and
-implicit companion downloads are unsupported. The generic API does not itself
-qualify any speculative algorithm or checkpoint pair.
+Put the model immediately after `build` when using family-specific options.
+`trtmc build /path/to/model --help` shows the resolved family's options without
+importing its GPU builder. Model resolution precedes family-specific argument
+validation; request preparation precedes backend import and bundle creation.
 
 ## Optional graph transform
 

@@ -541,3 +541,78 @@ def test_prepare_structure_requires_a_callable_family_hook(
             "-o", str(output),
         ])
     assert not output.exists()
+
+
+@pytest.mark.parametrize("explicit_family", [False, True])
+def test_build_family_hooks_forward_a_typed_request(monkeypatch, tmp_path, explicit_family):
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class ExampleRequest(build_cli.BuildRequest):
+        example_setting: str = ""
+
+    def add_arguments(parser):
+        parser.add_argument("--example-setting", required=True)
+
+    def prepare(request, args):
+        return ExampleRequest(**vars(request), example_setting=args.example_setting)
+
+    support = FamilySupport(
+        ("example_task",), "example_task",
+        add_build_arguments=add_arguments, prepare_build_request=prepare,
+    )
+    (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
+    monkeypatch.setattr(build_cli, "resolve_family", lambda metadata, *args: ("example_owner", support))
+    monkeypatch.setattr(build_cli, "_load_family", lambda *_: pytest.fail("GPU builder imported by CLI"))
+    seen = []
+    monkeypatch.setattr(build_cli, "build", seen.append)
+    arguments = ["build", str(tmp_path), "-o", str(tmp_path / "out"), "--example-setting", "verbatim"]
+    if explicit_family:
+        arguments += ["--family", "example_owner"]
+    assert build_cli.main(arguments) == 0
+    assert len(seen) == 1 and isinstance(seen[0], ExampleRequest)
+    assert seen[0].example_setting == "verbatim"
+    assert seen[0].family == "example_owner" and seen[0].model_dir == tmp_path
+
+
+def test_build_family_options_are_not_global(monkeypatch, tmp_path):
+    (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
+    support = FamilySupport(("example_task",), "example_task")
+    monkeypatch.setattr(build_cli, "resolve_family", lambda _: ("example_owner", support))
+    monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("unknown option reached build"))
+    with pytest.raises(SystemExit) as error:
+        build_cli.main(["build", str(tmp_path), "-o", str(tmp_path / "out"),
+                        "--example-setting", "not-owned"])
+    assert error.value.code == 2
+
+
+def test_build_family_help_does_not_require_output_or_load_builder(monkeypatch, tmp_path, capsys):
+    (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
+    support = FamilySupport(
+        ("example_task",), "example_task",
+        add_build_arguments=lambda parser: parser.add_argument("--example-setting"),
+        prepare_build_request=lambda *_: pytest.fail("help prepared a build"),
+    )
+    monkeypatch.setattr(build_cli, "resolve_family", lambda _: ("example_owner", support))
+    monkeypatch.setattr(build_cli, "_load_family", lambda *_: pytest.fail("help imported GPU builder"))
+    with pytest.raises(SystemExit) as error:
+        build_cli.main(["build", str(tmp_path), "--help"])
+    assert error.value.code == 0
+    assert "--example-setting" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("wrong_owner", [False, True])
+def test_build_family_hook_cannot_replace_owner_or_contract(monkeypatch, tmp_path, wrong_owner):
+    from dataclasses import replace
+
+    (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
+    support = FamilySupport(
+        ("example_task",), "example_task",
+        prepare_build_request=lambda request, _: (
+            replace(request, family="another_owner") if wrong_owner else object()
+        ),
+    )
+    monkeypatch.setattr(build_cli, "resolve_family", lambda _: ("example_owner", support))
+    monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("invalid request reached build"))
+    with pytest.raises(TypeError, match="preserve the owning BuildRequest"):
+        build_cli.main(["build", str(tmp_path), "-o", str(tmp_path / "out")])

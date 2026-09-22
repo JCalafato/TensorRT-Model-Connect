@@ -5,12 +5,17 @@
 
 from __future__ import annotations
 
+from argparse import ArgumentParser, Namespace
 import importlib
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+
+if TYPE_CHECKING:
+    from .build import BuildRequest
 
 
 _ID = re.compile(r"[a-z][a-z0-9_]*\Z")
@@ -56,6 +61,8 @@ class FamilySupport:
     tasks: tuple[str, ...]
     default_task: str
     default_precision: str = "fp32"
+    add_build_arguments: Callable[[ArgumentParser], None] | None = None
+    prepare_build_request: Callable[["BuildRequest", Namespace], "BuildRequest"] | None = None
 
     def __post_init__(self) -> None:
         if not self.tasks or len(set(self.tasks)) != len(self.tasks):
@@ -97,6 +104,8 @@ def family_support(
     tasks: tuple[str, ...],
     default_task: str,
     default_precision: str = "fp32",
+    add_build_arguments: Callable[[ArgumentParser], None] | None = None,
+    prepare_build_request: Callable[["BuildRequest", Namespace], "BuildRequest"] | None = None,
 ) -> DescribeSupport:
     """Create one exact, family-owned support function."""
 
@@ -110,6 +119,8 @@ def family_support(
         tasks=tasks,
         default_task=default_task,
         default_precision=default_precision,
+        add_build_arguments=add_build_arguments,
+        prepare_build_request=prepare_build_request,
     )
 
     def describe(metadata: ModelMetadata) -> FamilySupport | None:
