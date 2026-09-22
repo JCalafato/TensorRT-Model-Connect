@@ -7,15 +7,30 @@ paired path or claim native Gemma4 support.
 
 ## Build and inference
 
-Use the [pinned native SDK provisioning](../../cmake/edgellm/README.md) with
+Use the [pinned native SDK provisioning](../../../cmake/edge_llm/README.md) with
 `TRTMC_EDGELLM_ALL_KERNELS=ON` and `TRTMC_EDGELLM_ONNX=ON`, then configure the
 Model Connect runtime with `TRTMC_ENABLE_EDGELLM=ON`. Set `CMAKE_PREFIX_PATH`
 to the SDK installation. The source is official GitHub Edge-LLM 0.10.1,
 revision `e8b29522938901f6df19ebeedd4b69bc8edbcd97`; cross compilation is not used.
 
-Pass `execution=BuildExecutionInputs("mtp", (NamedCheckpoint("draft",
-draft_path),))` to the Python build API. The build CLI equivalent adds
-`--execution-variant mtp --companion draft=/path/to/assistant`.
+Use the existing build CLI with family-owned options (no checkpoint edits):
+
+```sh
+trtmc build /path/to/target --family gemma --precision fp16 \
+  -o /path/to/pair.bundle --execution-variant mtp \
+  --companion draft=/path/to/assistant
+```
+
+`trtmc build /path/to/target --help` displays Gemma's options. Only Gemma
+registers these flags; core does not interpret them or select Edge execution.
+Python callers use `GemmaBuildRequest` and the family-owned
+`BuildExecutionInputs`/`NamedCheckpoint` types from `families.gemma.edge_llm.config`,
+then call the unchanged `tensorrt_model_connect.build(request)` API.
+The existing ordinary Gemma `build(request, writer)` entrypoint chooses paired
+Edge execution only for an explicit family request. Without it, native behavior
+and unsupported-model rejection remain unchanged. Companion paths must name
+existing local directories and are never inferred or downloaded.
+
 The family forwards both unmodified checkpoints to the original Python ONNX
 exporter with `--mtp --mtp-draft-dir`, excluding image/audio branches for this
 text-only profile. The original native ONNX builder creates both speculative
@@ -93,3 +108,15 @@ not claimed as byte-for-byte parity with the faulty upstream static template.
 MTP passes both unchanged quality gates with the same engine bundle after the
 request-only fix, including on the combined runtime. DSpark also passes both
 unchanged quality gates with the source-faithful prompt mapping. Initial failure evidence and the tokenizer audit are retained.
+
+## Family-owned CLI refactor validation
+
+The model qualification results above predate the CLI ownership refactor.
+The refactor preserves exporter commands, engine composition, C++ inference
+logic, reference outputs and quality thresholds. New coverage in the existing
+family tests checks both CLI variants through ordinary core dispatch into the
+family builder, malformed companions, typed request preservation and failed-build
+bundle atomicity. Native adapter compilation and the sampler/pipeline C++ tests
+were rerun successfully. Full checkpoint export/build/inference was not rerun
+for this refactor; the successful qualification bundles were retired under the
+approved artifact cleanup, so replay requires rebuilding those exact profiles.

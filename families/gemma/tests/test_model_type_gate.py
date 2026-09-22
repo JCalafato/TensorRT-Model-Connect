@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+from dataclasses import FrozenInstanceError
 import re
 from pathlib import Path
 
@@ -20,6 +22,13 @@ try:
     from tensorrt_model_connect.model_support import ModelMetadata
 except (ImportError, ModuleNotFoundError):
     pytest.skip("tensorrt_model_connect requires TensorRT", allow_module_level=True)
+
+
+from families.gemma.edge_llm.config import (
+    BuildExecutionInputs, GemmaBuildRequest, NamedCheckpoint, with_execution,
+)
+
+build_core = importlib.import_module("tensorrt_model_connect.build")
 
 
 def _model_dir(tmp_path: Path, model_type: str) -> Path:
@@ -132,3 +141,163 @@ def _build_with(model_dir: Path, *, precision: str) -> None:
         ),
         writer=None,
     )
+
+
+def execution_request(root: Path) -> BuildRequest:
+    return BuildRequest(root, root / "model.bundle", "gemma", "text_generation", "fp16")
+
+
+def inputs(root: Path) -> BuildExecutionInputs:
+    return BuildExecutionInputs("mtp", (NamedCheckpoint("draft", root),))
+
+
+def test_execution_inputs_are_immutable(tmp_path):
+    execution = inputs(tmp_path)
+    with pytest.raises(FrozenInstanceError):
+        execution.variant = "other"
+    with pytest.raises(FrozenInstanceError):
+        execution.checkpoints[0].role = "other"
+    assert execution.checkpoints[0].model_dir is tmp_path
+
+
+@pytest.mark.parametrize("value", ["", "../bad", "UPPER", "a-b", "a.b"])
+def test_invalid_role_and_variant(tmp_path, value):
+    with pytest.raises(ValueError, match="lowercase identifier"):
+        NamedCheckpoint(value, tmp_path)
+    with pytest.raises(ValueError, match="lowercase identifier"):
+        BuildExecutionInputs(value)
+
+
+def test_execution_requires_immutable_typed_companions(tmp_path):
+    checkpoint = NamedCheckpoint("draft", tmp_path)
+    with pytest.raises(TypeError, match="tuple"):
+        BuildExecutionInputs("mtp", [checkpoint])
+    with pytest.raises(TypeError, match="NamedCheckpoint"):
+        BuildExecutionInputs("mtp", (object(),))
+    with pytest.raises(ValueError, match="unique"):
+        BuildExecutionInputs("mtp", (checkpoint, checkpoint))
+    with pytest.raises(TypeError, match="Path"):
+        NamedCheckpoint("draft", str(tmp_path))
+
+
+def test_local_checkpoint_required_and_rechecked(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="existing local directory"):
+        NamedCheckpoint("draft", tmp_path / "missing")
+    file = tmp_path / "file"
+    file.write_text("not a directory")
+    with pytest.raises(ValueError, match="existing local directory"):
+        NamedCheckpoint("draft", file)
+    directory = tmp_path / "companion"
+    directory.mkdir()
+    execution = inputs(directory)
+    directory.rmdir()
+    monkeypatch.setattr(build_core, "_select_backend", lambda _: pytest.fail("backend touched"))
+    with pytest.raises(ValueError, match="existing local directory"):
+        with_execution(execution_request(tmp_path), execution)
+
+
+def test_untyped_execution_fails_before_side_effects(tmp_path, monkeypatch):
+    monkeypatch.setattr(build_core, "_select_backend", lambda _: pytest.fail("backend touched"))
+    with pytest.raises(TypeError, match="BuildExecutionInputs"):
+        with_execution(execution_request(tmp_path), {"variant": "paired"})
+
+
+
+
+@pytest.mark.parametrize("variant", ["mtp", "dspark"])
+def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkeypatch, variant):
+    from families.gemma.edge_llm import builder as edge_builder
+    from tensorrt_model_connect import build_cli
+
+    source = _model_dir(tmp_path / "target", "gemma4_unified")
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    output = tmp_path / "pair.bundle"
+    seen = []
+
+    def paired(request, writer, execution):
+        assert isinstance(request, GemmaBuildRequest)
+        assert request.execution is execution
+        seen.append(execution)
+        writer.set_header(family="gemma", task=request.task, backend=request.backend)
+        writer.add_json("edge-test.json", {"variant": execution.variant})
+
+    monkeypatch.setattr(edge_builder, "build", paired)
+    assert build_cli.main([
+        "build", str(source), "--family", "gemma", "--precision", "fp16",
+        "-o", str(output), "--execution-variant", variant,
+        "--companion", f"draft={draft}",
+    ]) == 0
+    assert seen == [BuildExecutionInputs(variant, (NamedCheckpoint("draft", draft),))]
+    assert output.is_file()
+
+
+@pytest.mark.parametrize("options", [
+    ["--companion", "draft=/missing"],
+    ["--execution-variant", "mtp", "--companion", "missing_separator"],
+    ["--execution-variant", "mtp", "--companion", "=path"],
+    ["--execution-variant", "mtp", "--companion", "draft="],
+    ["--execution-variant", "mtp", "--companion", "draft=https://example.com/model"],
+])
+def test_bad_edge_cli_inputs_fail_before_backend_and_bundle(tmp_path, monkeypatch, options):
+    from tensorrt_model_connect import build_cli
+
+    source = _model_dir(tmp_path / "target", "gemma4_unified")
+    output = tmp_path / "pair.bundle"
+    monkeypatch.setattr(build_core, "_select_backend", lambda *_: pytest.fail("backend touched"))
+    monkeypatch.setattr(build_core, "BundleWriter", lambda *_: pytest.fail("writer created"))
+    with pytest.raises(ValueError):
+        build_cli.main(["build", str(source), "--family", "gemma", "-o", str(output), *options])
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("paired build failed"), KeyboardInterrupt()])
+def test_edge_family_failure_preserves_existing_publication(tmp_path, monkeypatch, failure):
+    from families.gemma.edge_llm import builder as edge_builder
+
+    request = with_execution(execution_request(tmp_path), inputs(tmp_path))
+    request.output_path.write_bytes(b"previous valid publication")
+
+    def fail(actual, writer, execution):
+        writer.set_header(family="gemma", task=actual.task, backend=actual.backend)
+        writer.add_json("edge-test.json", {"variant": execution.variant})
+        raise failure
+
+    monkeypatch.setattr(edge_builder, "build", fail)
+    with pytest.raises(type(failure)) as caught:
+        build_core.build(request)
+    assert caught.value is failure
+    assert request.output_path.read_bytes() == b"previous valid publication"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["model.bundle"]
+
+
+def test_edge_request_keeps_graph_callback_and_all_ordinary_fields(tmp_path):
+    from dataclasses import fields, replace
+
+    def callback(layer):
+        return layer
+    ordinary = replace(execution_request(tmp_path), graph_transform=callback, max_sequence_length=128)
+    extended = with_execution(ordinary, inputs(tmp_path))
+    for field in fields(BuildRequest):
+        assert getattr(extended, field.name) is getattr(ordinary, field.name)
+    with pytest.raises(FrozenInstanceError):
+        extended.execution = None
+
+
+def test_family_cli_without_extra_options_preserves_native_request(tmp_path):
+    import argparse
+    from families.gemma.edge_llm import cli
+
+    parser = argparse.ArgumentParser()
+    parser.set_defaults(command="build")
+    cli.add_build_arguments(parser)
+    request = execution_request(tmp_path)
+    assert cli.prepare_build_request(request, parser.parse_args([])) is request
+
+
+def test_paired_request_cannot_be_dispatched_to_another_family(tmp_path):
+    from dataclasses import replace
+
+    request = replace(execution_request(tmp_path), family="another_owner")
+    with pytest.raises(ValueError, match="requires the gemma family"):
+        with_execution(request, inputs(tmp_path))
