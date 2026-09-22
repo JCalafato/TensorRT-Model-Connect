@@ -3,6 +3,9 @@
 
 # Optional complete-network offload; all model-specific orchestration stays here.
 if(TARGET EdgeLLM::Core)
+  if(NOT TARGET EdgeLLM::Plugin)
+    message(FATAL_ERROR "Gemma Edge adapter requires the complete EdgeLLM package (Core and Plugin)")
+  endif()
   target_sources(trtmc_model_gemma PRIVATE "${CMAKE_CURRENT_LIST_DIR}/adapter.cpp" "${CMAKE_CURRENT_LIST_DIR}/device_link.cu")
   target_compile_definitions(trtmc_model_gemma PRIVATE TRTMC_HAS_EDGE_LLM=1)
   target_link_libraries(trtmc_model_gemma PRIVATE EdgeLLM::Core)
