@@ -564,14 +564,18 @@ def test_bad_cli_execution_rejected_before_primary_model_acquisition(monkeypatch
         build_cli.main(["build", "model-id", "-o", "/tmp/example.bundle", *options])
 
 
-def test_cli_forwards_exact_variant_and_named_local_paths(tmp_path, monkeypatch):
+@pytest.mark.parametrize("family", [None, "explicit_owner"])
+def test_cli_forwards_exact_variant_and_named_local_paths(tmp_path, monkeypatch, family):
     from tensorrt_model_connect.model_support import FamilySupport
 
     (tmp_path / "config.json").write_text('{"model_type":"example_model"}')
     monkeypatch.setattr(
         build_cli,
         "resolve_family",
-        lambda _: ("example_owner", FamilySupport(("example_task",), "example_task")),
+        lambda _, requested=None: (
+            requested or "example_owner",
+            FamilySupport(("example_task",), "example_task"),
+        ),
     )
     companion = tmp_path / "checkpoint=local"
     companion.mkdir()
@@ -589,10 +593,12 @@ def test_cli_forwards_exact_variant_and_named_local_paths(tmp_path, monkeypatch)
             "paired",
             "--companion",
             f"draft={companion}",
+            *(["--family", family] if family is not None else []),
         ]
     )
     actual_request, kwargs = seen[0]
     assert actual_request.model_dir == tmp_path
+    assert actual_request.family == (family or "example_owner")
     assert kwargs == {
         "execution": BuildExecutionInputs("paired", (NamedCheckpoint("draft", companion),))
     }
