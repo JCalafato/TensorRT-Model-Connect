@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 import tempfile
 import traceback
@@ -87,6 +88,11 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
     if not isinstance(config, dict):
         raise ValueError("checkpoint text_config must contain an object")
     if not candidate(request, raw):
+        native(request, writer)
+        return
+    # This complete-network route is Linux-only. Do not probe another platform's
+    # compiler/device just to discover a non-match in the dispatch table.
+    if sys.platform != "linux":
         native(request, writer)
         return
     if draft_dir is None and not edge_llm.package_present():
