@@ -13,16 +13,16 @@ Model Connect runtime with `TRTMC_ENABLE_EDGELLM=ON`. Set `CMAKE_PREFIX_PATH`
 to the SDK installation. The source is official GitHub Edge-LLM 0.10.1,
 revision `e8b29522938901f6df19ebeedd4b69bc8edbcd97`; cross compilation is not used.
 
-Use the existing build CLI with family-owned options (no checkpoint edits):
+Use the existing family CLI protocol with family-owned options (no checkpoint edits):
 
 ```sh
-trtmc build /path/to/target --family gemma --precision fp16 \
+trtmc gemma build /path/to/target --precision fp16 \
   -o /path/to/pair.bundle --execution-variant mtp \
   --companion draft=/path/to/assistant
 ```
 
-`trtmc build /path/to/target --help` displays Gemma's options. Only Gemma
-registers these flags; core does not interpret them or select Edge execution.
+`trtmc gemma build /path/to/target --help` displays Gemma's options. Only Gemma
+declares these flags in cli.json; core does not interpret them or select Edge execution.
 Python callers use `GemmaBuildRequest` and the family-owned
 `BuildExecutionInputs`/`NamedCheckpoint` types from `families.gemma.edge_llm.config`,
 then call the unchanged `tensorrt_model_connect.build(request)` API.
@@ -120,3 +120,9 @@ bundle atomicity. Native adapter compilation and the sampler/pipeline C++ tests
 were rerun successfully. Full checkpoint export/build/inference was not rerun
 for this refactor; the successful qualification bundles were retired under the
 approved artifact cleanup, so replay requires rebuilding those exact profiles.
+
+## Declared build command
+
+This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc gemma build`.
+Help is offline and does not need a local checkpoint. No shared parser hook or
+family registry entry is added.

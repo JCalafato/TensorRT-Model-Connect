@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 import re
 
-from tensorrt_model_connect.build import BuildRequest
+from ..build_request import BuildRequest, coerce_request
 
 
 _ID = re.compile(r"[a-z][a-z0-9_]*\Z")
@@ -81,7 +81,8 @@ class GemmaBuildRequest(BuildRequest):
 
 
 def with_execution(request: BuildRequest, execution: BuildExecutionInputs) -> GemmaBuildRequest:
-    """Preserve ordinary request fields and callback identity."""
+    """Preserve supported ordinary request fields and callback identity."""
+    request = coerce_request(request)
     return GemmaBuildRequest(
         **{field.name: getattr(request, field.name) for field in fields(BuildRequest)},
         execution=execution,

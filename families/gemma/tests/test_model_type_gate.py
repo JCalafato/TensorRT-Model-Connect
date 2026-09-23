@@ -207,7 +207,7 @@ def test_untyped_execution_fails_before_side_effects(tmp_path, monkeypatch):
 @pytest.mark.parametrize("variant", ["mtp", "dspark"])
 def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkeypatch, variant):
     from families.gemma.edge_llm import builder as edge_builder
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
 
     source = _model_dir(tmp_path / "target", "gemma4_unified")
     draft = tmp_path / "draft"
@@ -223,8 +223,8 @@ def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkey
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(edge_builder, "build", paired)
-    assert build_cli.main([
-        "build", str(source), "--family", "gemma", "--precision", "fp16",
+    assert build_cli.main(["gemma",
+        "build", str(source), "--precision", "fp16",
         "-o", str(output), "--execution-variant", variant,
         "--companion", f"draft={draft}",
     ]) == 0
@@ -240,14 +240,14 @@ def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkey
     ["--execution-variant", "mtp", "--companion", "draft=https://example.com/model"],
 ])
 def test_bad_edge_cli_inputs_fail_before_backend_and_bundle(tmp_path, monkeypatch, options):
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
 
     source = _model_dir(tmp_path / "target", "gemma4_unified")
     output = tmp_path / "pair.bundle"
     monkeypatch.setattr(build_core, "_select_backend", lambda *_: pytest.fail("backend touched"))
     monkeypatch.setattr(build_core, "BundleWriter", lambda *_: pytest.fail("writer created"))
     with pytest.raises(ValueError):
-        build_cli.main(["build", str(source), "--family", "gemma", "-o", str(output), *options])
+        build_cli.main(["gemma", "build", str(source), "-o", str(output), *options])
     assert not output.exists()
 
 
@@ -285,14 +285,9 @@ def test_edge_request_keeps_graph_callback_and_all_ordinary_fields(tmp_path):
 
 
 def test_family_cli_without_extra_options_preserves_native_request(tmp_path):
-    import argparse
     from families.gemma.edge_llm import cli
 
-    parser = argparse.ArgumentParser()
-    parser.set_defaults(command="build")
-    cli.add_build_arguments(parser)
-    request = execution_request(tmp_path)
-    assert cli.prepare_build_request(request, parser.parse_args([])) is request
+    assert cli.execution_inputs(None) is None
 
 
 def test_paired_request_cannot_be_dispatched_to_another_family(tmp_path):
@@ -301,3 +296,61 @@ def test_paired_request_cannot_be_dispatched_to_another_family(tmp_path):
     request = replace(execution_request(tmp_path), family="another_owner")
     with pytest.raises(ValueError, match="requires the gemma family"):
         with_execution(request, inputs(tmp_path))
+
+
+@pytest.mark.parametrize("options", [[], ["--precision", "fp16", "--max-sequence-length", "64"]])
+def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
+    """Owner command preserves ordinary request defaults and explicit controls."""
+    import json
+    from families.gemma import cli as owner
+    from tensorrt_model_connect import build_cli, family_cli
+
+    source = tmp_path / "checkpoint"
+    source.mkdir()
+    (source / "config.json").write_text(json.dumps({"model_type": "gemma"}))
+    output = tmp_path / "model.bundle"
+    captured = []
+    monkeypatch.setattr(owner, "build_bundle", lambda request, output: captured.append(request))
+    monkeypatch.setattr(build_cli, "build", captured.append)
+    args = [str(source), "-o", str(output), *options]
+    assert family_cli.main(["gemma", "build", *args]) == 0
+    assert build_cli.main(["build", *args, "--family", "gemma"]) == 0
+    assert len(captured) == 2
+    from dataclasses import fields
+    assert isinstance(captured[0], owner.BuildRequest)
+    for field in fields(captured[1]):
+        assert getattr(captured[0], field.name) == getattr(captured[1], field.name)
+    from dataclasses import replace
+    from families.gemma.build_request import coerce_request
+    assert coerce_request(captured[1]) == captured[0]
+    with pytest.raises(NotImplementedError, match="image_height"):
+        coerce_request(replace(captured[1], image_height=32))
+    from types import SimpleNamespace
+    with pytest.raises(ValueError, match="unknown"):
+        coerce_request(SimpleNamespace(**vars(captured[1]), unexpected_option=True))
+    assert captured[0].family == "gemma"
+    assert captured[0].task == "text_generation"
+    assert captured[0].precision == ("fp16" if options else "fp32")
+    assert not output.exists()
+
+
+def test_declared_help_is_offline_and_dependency_free():
+    """Actual child-process help needs neither a checkpoint nor GPU imports."""
+    import subprocess
+    import sys
+
+    code = """
+import sys
+from tensorrt_model_connect.family_cli import main
+try:
+    main(["gemma", "build", "--help"])
+except SystemExit as error:
+    assert error.code == 0
+else:
+    raise AssertionError("help did not exit")
+assert "families.gemma.cli" not in sys.modules
+assert "tensorrt" not in sys.modules
+assert "huggingface_hub" not in sys.modules
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert "trtmc gemma build" in result.stdout
