@@ -85,7 +85,7 @@ def _edge_cli_source(tmp_path):
 
 
 def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
     from families.nemotron_h.edge_llm import dispatch
     from families.nemotron_h.edge_llm.config import NemotronHBuildRequest
 
@@ -103,7 +103,7 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(dispatch, "build_paired", paired)
-    assert build_cli.main([
+    assert build_cli.main(["nemotron_h",
         "build", str(source), "--precision", "fp16", "-o", str(output),
         "--execution-variant", "dflash", "--companion", f"draft={draft}",
     ]) == 0
@@ -120,22 +120,22 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
 ])
 def test_bad_edge_cli_inputs_fail_before_backend(tmp_path, monkeypatch, options):
     import importlib
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
 
     core = importlib.import_module("tensorrt_model_connect.build")
     source, _ = _edge_cli_source(tmp_path)
     monkeypatch.setattr(core, "_select_backend", lambda *_: pytest.fail("backend touched"))
     monkeypatch.setattr(core, "BundleWriter", lambda *_: pytest.fail("writer created"))
     with pytest.raises(ValueError):
-        build_cli.main(["build", str(source), "-o", str(tmp_path / "out"), *options])
+        build_cli.main(["nemotron_h", "build", str(source), "-o", str(tmp_path / "out"), *options])
 
 
 def test_edge_cli_help_is_family_owned(tmp_path, capsys):
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
 
     source, _ = _edge_cli_source(tmp_path)
     with pytest.raises(SystemExit) as caught:
-        build_cli.main(["build", str(source), "--help"])
+        build_cli.main(["nemotron_h", "build", str(source), "--help"])
     assert caught.value.code == 0
     help_text = capsys.readouterr().out
     assert "--execution-variant {dflash}" in help_text
@@ -143,7 +143,6 @@ def test_edge_cli_help_is_family_owned(tmp_path, capsys):
 
 
 def test_edge_request_preserves_fields_and_family_owner(tmp_path):
-    import argparse
     from families.nemotron_h.edge_llm import cli
     from dataclasses import fields, replace
     from tensorrt_model_connect.build import BuildRequest
@@ -155,8 +154,7 @@ def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     request = BuildRequest(source, tmp_path / "out", "nemotron_h", "text_generation", "fp16",
                            graph_transform=lambda layer: layer)
     execution = BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft),))
-    args = argparse.Namespace(command="build", execution_variant=None, companion=[])
-    assert cli.prepare_build_request(request, args) is request
+    assert cli.execution_inputs(None) is None
     extended = with_execution(request, execution)
     for field in fields(BuildRequest):
         assert getattr(extended, field.name) is getattr(request, field.name)
@@ -168,7 +166,7 @@ def test_edge_request_preserves_fields_and_family_owner(tmp_path):
 
 @pytest.mark.parametrize("failure", [RuntimeError("paired build failed"), KeyboardInterrupt()])
 def test_edge_cli_failure_preserves_existing_bundle(tmp_path, monkeypatch, failure):
-    from tensorrt_model_connect import build_cli
+    from tensorrt_model_connect import family_cli as build_cli
     from families.nemotron_h.edge_llm import dispatch
 
     source, draft = _edge_cli_source(tmp_path)
@@ -182,7 +180,7 @@ def test_edge_cli_failure_preserves_existing_bundle(tmp_path, monkeypatch, failu
 
     monkeypatch.setattr(dispatch, "build_paired", fail)
     with pytest.raises(type(failure)) as caught:
-        build_cli.main([
+        build_cli.main(["nemotron_h",
             "build", str(source), "-o", str(output), "--execution-variant", "dflash",
             "--companion", f"draft={draft}",
         ])
@@ -280,3 +278,61 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
         assert "Retrying native once" in caplog.text
     elif mode != "cancel":
         assert not logs and "Edge build failed" not in caplog.text
+
+
+@pytest.mark.parametrize("options", [[], ["--precision", "fp16", "--max-sequence-length", "64"]])
+def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
+    """Owner command preserves ordinary request defaults and explicit controls."""
+    import json
+    from families.nemotron_h import cli as owner
+    from tensorrt_model_connect import build_cli, family_cli
+
+    source = tmp_path / "checkpoint"
+    source.mkdir()
+    (source / "config.json").write_text(json.dumps({"model_type": "nemotron_h"}))
+    output = tmp_path / "model.bundle"
+    captured = []
+    monkeypatch.setattr(owner, "build_bundle", lambda request, output: captured.append(request))
+    monkeypatch.setattr(build_cli, "build", captured.append)
+    args = [str(source), "-o", str(output), *options]
+    assert family_cli.main(["nemotron_h", "build", *args]) == 0
+    assert build_cli.main(["build", *args, "--family", "nemotron_h"]) == 0
+    assert len(captured) == 2
+    from dataclasses import fields
+    assert isinstance(captured[0], owner.BuildRequest)
+    for field in fields(captured[1]):
+        assert getattr(captured[0], field.name) == getattr(captured[1], field.name)
+    from dataclasses import replace
+    from families.nemotron_h.build_request import coerce_request
+    assert coerce_request(captured[1]) == captured[0]
+    with pytest.raises(NotImplementedError, match="image_height"):
+        coerce_request(replace(captured[1], image_height=32))
+    from types import SimpleNamespace
+    with pytest.raises(ValueError, match="unknown"):
+        coerce_request(SimpleNamespace(**vars(captured[1]), unexpected_option=True))
+    assert captured[0].family == "nemotron_h"
+    assert captured[0].task == "text_generation"
+    assert captured[0].precision == ("fp16" if options else "fp32")
+    assert not output.exists()
+
+
+def test_declared_help_is_offline_and_dependency_free():
+    """Actual child-process help needs neither a checkpoint nor GPU imports."""
+    import subprocess
+    import sys
+
+    code = """
+import sys
+from tensorrt_model_connect.family_cli import main
+try:
+    main(["nemotron_h", "build", "--help"])
+except SystemExit as error:
+    assert error.code == 0
+else:
+    raise AssertionError("help did not exit")
+assert "families.nemotron_h.cli" not in sys.modules
+assert "tensorrt" not in sys.modules
+assert "huggingface_hub" not in sys.modules
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert "trtmc nemotron_h build" in result.stdout
