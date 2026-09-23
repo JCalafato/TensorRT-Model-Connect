@@ -265,7 +265,7 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
     if mode in {"corrupt", "failure", "device_failure"}:
         assert len(logs) == 1 and "Traceback" in logs[0].read_text()
         assert "Retrying native once" in caplog.text
-    elif mode != "cancel":
+    else:
         assert not logs and "Edge build failed" not in caplog.text
 
 
@@ -294,6 +294,9 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
     from dataclasses import replace
     from families.internvl.build_request import coerce_request
     assert coerce_request(captured[1]) == captured[0]
+    assert coerce_request(replace(captured[1], fp32_layers=[])) == captured[0]
+    with pytest.raises(NotImplementedError, match="fp32_layers"):
+        coerce_request(replace(captured[1], fp32_layers=[0]))
     with pytest.raises(NotImplementedError, match="image_height"):
         coerce_request(replace(captured[1], image_height=32))
     from types import SimpleNamespace

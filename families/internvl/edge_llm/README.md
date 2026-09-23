@@ -95,6 +95,10 @@ output directory filesystem (choose a scratch-backed output), not system /tmp.
 
 ## Declared build command
 
-This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc internvl build`.
+This family uses the existing cli.json protocol introduced in #1310. The family
+owns its declaration, typed inputs and Python handler. The handler adapts those
+inputs to the unchanged builder API, preserving native/Edge dispatch and bundle
+publication. The legacy flat build command remains available for its existing
+ordinary options; new family options use `trtmc internvl build`.
 Help is offline and does not need a local checkpoint. No shared parser hook or
 family registry entry is added.
