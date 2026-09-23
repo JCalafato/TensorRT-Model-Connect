@@ -97,3 +97,34 @@ local drivers are not newly registered CI cases or published test-framework code
 Fresh CPU, native compilation, existing C++ checks and PR CI must be reported
 separately from model inference. No other Llama checkpoint, precision, platform,
 long-context behavior or stochastic equivalence is established by this table.
+
+## Family-owned build options
+
+The generic CLI loads this family's `edge_llm.cli` hook only after resolving
+the model. The shared build API has no execution-mode or companion arguments.
+All variant validation and builder selection remain in this family.
+
+```sh
+trtmc build /path/to/target --family llama --precision fp16 \
+  --execution-variant eagle3 --companion draft=/path/to/draft \
+  -o model.bundle
+```
+
+Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+shows these family options using local metadata; remote-ID help does not download
+a checkpoint. For Python callers, use this family's request extension:
+
+```python
+from tensorrt_model_connect import build
+from families.llama.edge_llm.config import (
+    BuildExecutionInputs, NamedCheckpoint, with_execution,
+)
+
+# request is an ordinary BuildRequest owned by this family; draft_path is a Path.
+build(with_execution(request, BuildExecutionInputs(
+    "eagle3", (NamedCheckpoint("draft", draft_path),),
+)))
+```
+
+A failed explicit pair is never replaced by a base-only bundle. Previously
+recorded full-model results above are historical, not fresh refactor-head E2Es.

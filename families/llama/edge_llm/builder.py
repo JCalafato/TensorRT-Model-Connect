@@ -12,8 +12,8 @@ import subprocess
 
 from tensorrt_model_connect.build import cmake_prefixes, detect_local_platform
 
-from .build_routing import native_kv_architecture_capability
-from .config import ModelConfig
+from ..build_routing import native_kv_architecture_capability
+from ..config import ModelConfig
 
 EDGE_REVISION = "e8b29522938901f6df19ebeedd4b69bc8edbcd97"
 
