@@ -126,7 +126,7 @@ def _prepare_runtime_inputs(
 
 
 if TYPE_CHECKING:
-    from tensorrt_model_connect.build import BuildRequest
+    from .build_request import BuildRequest
     from tensorrt_model_connect.bundle_writer import BundleWriter
 
 
@@ -1362,6 +1362,9 @@ def _runtime_config(model_dir: Path, config: ModelConfig, model: _Qwen35Model, *
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Select complete-network offload or preserve the native Qwen3.5 builder."""
+    from .build_request import coerce_request
+
+    request = coerce_request(request)
 
     from .edge_llm.config import Qwen35BuildRequest
     from .edge_llm.dispatch import build_paired
