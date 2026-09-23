@@ -129,3 +129,8 @@ build(with_execution(request, BuildExecutionInputs(
 
 A failed explicit pair is never replaced by a base-only bundle. Previously
 recorded full-model results above are historical, not fresh refactor-head E2Es.
+
+Ordinary builds without an installed optional Edge SDK select native without a
+warning. Malformed or incomplete installed packages still retain diagnostics and
+warn before native fallback. Temporary checkpoint/engine staging uses the bundle
+output directory filesystem (choose a scratch-backed output), not system /tmp.
