@@ -276,3 +276,79 @@ def test_edge_pair_requires_draft_and_rechecks_local_inputs(tmp_path):
     draft.rmdir()
     with pytest.raises(ValueError, match="existing local directory"):
         build_paired(request, None, execution)
+
+
+@pytest.mark.parametrize("mode", ["absent", "success", "corrupt", "failure", "cancel", "device_failure"])
+def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, caplog, mode):
+    import json
+    from tensorrt_model_connect.build import BuildRequest
+    from families.llama.edge_llm import builder, dispatch
+
+    source = tmp_path / "target"
+    source.mkdir()
+    (source / "config.json").write_text(json.dumps({
+        "max_position_embeddings": 4096, "hidden_size": 896,
+    }))
+    prefix = tmp_path / "package"
+    manifest = prefix / "share/trtmc/edge-llm.json"
+    if mode != "absent":
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{" if mode == "corrupt" else "{}")
+    monkeypatch.setattr(builder, "cmake_prefixes", lambda: [prefix])
+    monkeypatch.setattr(dispatch, "candidate", lambda *_: True)
+    for name in ("mapped_request", "request_matches", "platform_matches"):
+        if hasattr(dispatch, name):
+            monkeypatch.setattr(dispatch, name, lambda *_: True)
+    if hasattr(dispatch, "source_quantization"):
+        monkeypatch.setattr(dispatch, "source_quantization", lambda *_: "fp16")
+    if hasattr(builder, "request_weight_format"):
+        monkeypatch.setattr(builder, "request_weight_format", lambda *_: "fp16")
+    request = BuildRequest(source, tmp_path / "out", "llama", "text_generation", "fp16")
+    writer = object()
+    target = {"os": "linux", "arch": "x86_64", "sm": 80}
+    target_calls = []
+
+    def local_target():
+        target_calls.append(True)
+        if mode == "device_failure":
+            raise RuntimeError("CUDA discovery failed")
+        return target
+
+    monkeypatch.setattr(builder, "local_target", local_target)
+    stages, native_calls, publications = [], [], []
+
+    def prepare(original, raw, platform, staging, log):
+        assert original is request and platform is target
+        assert staging.parent == request.output_path.parent
+        assert staging.name.startswith(f".{request.output_path.name}.edge-")
+        stages.append(staging)
+        (staging / "large-checkpoint").write_bytes(b"fixture")
+        if mode == "corrupt":
+            builder.installed_package(target)
+        if mode == "failure":
+            raise FileNotFoundError("installed SDK artifact missing")
+        if mode == "cancel":
+            raise KeyboardInterrupt()
+        return {}, {}
+
+    monkeypatch.setattr(dispatch, "EDGE_DISPATCH", {("linux", "x86_64", 80, "fp16"): prepare})
+    monkeypatch.setattr(builder, "publish", lambda *args: publications.append(args))
+    def native(*args):
+        native_calls.append(args)
+    if mode == "cancel":
+        with pytest.raises(KeyboardInterrupt):
+            dispatch.build(request, writer, native)
+    else:
+        dispatch.build(request, writer, native)
+    assert all(not path.exists() for path in stages)
+    assert native_calls == ([(request, writer)] if mode in {
+        "absent", "corrupt", "failure", "device_failure",
+    } else [])
+    assert len(publications) == (1 if mode == "success" else 0)
+    assert len(target_calls) == (0 if mode == "absent" else 1)
+    logs = list(tmp_path.glob(".out.edge-*.log"))
+    if mode in {"corrupt", "failure", "device_failure"}:
+        assert len(logs) == 1 and "Traceback" in logs[0].read_text()
+        assert "Retrying native once" in caplog.text
+    elif mode != "cancel":
+        assert not logs and "Edge build failed" not in caplog.text
