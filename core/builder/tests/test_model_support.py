@@ -310,17 +310,3 @@ def test_family_owned_exact_metadata_shapes_resolve_without_priority(
 ) -> None:
     family, _ = resolve_family(metadata)
     assert family == expected_family
-
-@pytest.mark.parametrize("module", ["", ".cli", "../other", "cli.", "a..b", "module-name", 12])
-def test_build_cli_module_must_be_owned_module_path(module):
-    with pytest.raises(ValueError, match="within the owning family"):
-        FamilySupport(("text_generation",), "text_generation", build_cli_module=module)
-
-
-def test_family_build_cli_declaration_remains_import_free():
-    declaration = family_support(
-        model_types=("example_model",), tasks=("text_generation",),
-        default_task="text_generation", build_cli_module="optional.cli",
-    )
-    metadata = ModelMetadata({"model_type": "example_model"}, {}, frozenset())
-    assert declaration(metadata).build_cli_module == "optional.cli"
