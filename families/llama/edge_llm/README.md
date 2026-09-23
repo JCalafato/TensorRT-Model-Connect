@@ -111,7 +111,7 @@ trtmc build /path/to/target --family llama --precision fp16 \
   -o model.bundle
 ```
 
-Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+Put MODEL before family-specific options; known core options may precede MODEL. `trtmc build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
 a checkpoint. For Python callers, use this family's request extension:
 
