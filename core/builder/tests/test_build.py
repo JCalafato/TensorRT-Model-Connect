@@ -440,3 +440,11 @@ def test_cuda_toolkit_compiler_failures_preserve_cause(monkeypatch, failure):
     with pytest.raises(RuntimeError, match="Cannot query CUDA toolkit") as caught:
         build_core._cuda_toolkit_version()
     assert caught.value.__cause__ is failure
+
+
+def test_cuda_toolkit_malformed_compiler_command_preserves_cause(monkeypatch):
+    monkeypatch.setenv("CUDACXX", '"unclosed compiler path')
+    monkeypatch.setattr(build_core.subprocess, "run", lambda *_a, **_k: pytest.fail("compiler ran"))
+    with pytest.raises(RuntimeError, match="Invalid CUDACXX command") as caught:
+        build_core._cuda_toolkit_version()
+    assert isinstance(caught.value.__cause__, ValueError)

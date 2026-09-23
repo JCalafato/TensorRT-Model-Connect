@@ -74,3 +74,13 @@ Run the existing runtime and family checks against this installation
 ```bash
 ctest --test-dir build --output-on-failure
 ```
+
+The installed private Python environment exposes its interpreter and modules,
+not build-only console/activation scripts containing build-tree paths. Invoke
+the exported interpreter with isolated module execution, or use the installed
+prefix-relative builder launcher. CMake/Ninja entrypoints remain in the
+dependency build environment for reprovisioning. Install into a clean prefix
+when replacing an older SDK that included these private console scripts.
+Preparation verifies the actual Git checkout against the official pin before
+installing dependencies, including on CMake versions with older disconnected
+update behavior.
