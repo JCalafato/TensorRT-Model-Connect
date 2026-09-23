@@ -112,5 +112,5 @@ becomes base-only decoding. Quantized Llama routes are outside this publication.
 These are bounded historical build/inference results, not catalog-wide support
 or an assertion that every profile is registered in CI. Passing engine payloads
 were retired; publication checks are reported separately. See the
-[family-owned recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/llama/docs/edge-llm.md)
+[family-owned recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/llama/edge_llm/README.md)
 for exact revisions, capacities, controls and validation boundaries.

@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import traceback
 
-from . import edge_llm
+from . import builder as edge_llm
 
 _LOG = logging.getLogger(__name__)
 
@@ -140,3 +140,51 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
         if failure is not None:
             raise error from failure
         raise
+
+
+def build_paired(request, writer, execution) -> None:
+    """Build an explicitly paired Llama EAGLE3 deployment without dropping its draft."""
+    execution.validate_local()
+    if execution.variant != "eagle3" or tuple(x.role for x in execution.checkpoints) != ("draft",):
+        raise ValueError("Llama paired execution requires variant=eagle3 and one draft checkpoint")
+    draft_dir = execution.checkpoints[0].model_dir
+    base = json.loads((request.model_dir / "config.json").read_text())
+    draft = json.loads((draft_dir / "config.json").read_text())
+    if not candidate(request, base):
+        raise ValueError("Llama EAGLE3 requires an admitted dense base request")
+    expected = {
+        "model_type": "llama",
+        "architectures": ["LlamaForCausalLM"],
+        "num_hidden_layers": 1,
+        "draft_vocab_size": 32000,
+    }
+    if not isinstance(draft, dict) or any(draft.get(k) != v for k, v in expected.items()):
+        raise ValueError("Unsupported Llama EAGLE3 draft configuration")
+    for name in (
+        "hidden_size",
+        "intermediate_size",
+        "num_attention_heads",
+        "num_key_value_heads",
+        "vocab_size",
+    ):
+        if draft.get(name) != base.get(name):
+            raise ValueError(f"Llama EAGLE3 base and draft disagree on {name}")
+    if base.get("num_hidden_layers") != 32 or base.get("hidden_size") != 4096:
+        raise ValueError("This Llama EAGLE3 draft requires its 8B base geometry")
+    if any(
+        edge_llm.checkpoint_weight_format(path, config) != "fp16"
+        for path, config in ((request.model_dir, base), (draft_dir, draft))
+    ):
+        raise ValueError("This Llama EAGLE3 pair requires original FP16 checkpoints")
+    draft_capacity = draft.get("max_position_embeddings")
+    if type(draft_capacity) is not int or draft_capacity <= 0:
+        raise ValueError("Invalid Llama EAGLE3 draft context capacity")
+    limit = request.max_sequence_length
+    if limit is not None and limit > draft_capacity:
+        raise ValueError("Requested context exceeds Llama EAGLE3 draft capacity")
+
+    def native_pair(original_request, original_writer):
+        # Never turn a failed explicit pair into an ordinary base-only bundle.
+        raise ValueError("Native Llama does not implement the requested EAGLE3 execution variant")
+
+    build(request, writer, native_pair, draft_dir=draft_dir)
