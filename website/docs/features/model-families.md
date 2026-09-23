@@ -111,6 +111,11 @@ imply CI coverage of that pair or statistical sampling equivalence.
 
 ### Nemotron-H Edge-LLM execution
 
+Use `trtmc nemotron_h build MODEL -o model.bundle` with the owning
+family\u0027s options. `trtmc nemotron_h build --help` works offline without
+a checkpoint or GPU imports. This uses the existing
+[family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
+
 The Nemotron-H family owns optional pinned Edge-LLM whole-network offload.
 Ordinary compatible text builds use the experimental builder; the explicit
 Lightning NVFP4/DFlash pair uses ONNX with

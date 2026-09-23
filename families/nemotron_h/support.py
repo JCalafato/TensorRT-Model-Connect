@@ -10,5 +10,4 @@ describe = family_support(
     model_types=("nemotron_h", "nemotron_hybrid", "nemotronh"),
     tasks=("text_generation",),
     default_task="text_generation",
-    build_cli_module="edge_llm.cli",
 )

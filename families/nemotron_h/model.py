@@ -73,7 +73,7 @@ def _parse_layer_types(pattern: str) -> list[str]:
 
 
 if TYPE_CHECKING:
-    from tensorrt_model_connect.build import BuildRequest
+    from .build_request import BuildRequest
     from tensorrt_model_connect.bundle_writer import BundleWriter
 
 
@@ -994,6 +994,9 @@ def _runtime_config(
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Dispatch complete offload or execute the unchanged native implementation."""
+    from .build_request import coerce_request
+
+    request = coerce_request(request)
 
     from .edge_llm.config import NemotronHBuildRequest
     from .edge_llm.dispatch import build_paired
