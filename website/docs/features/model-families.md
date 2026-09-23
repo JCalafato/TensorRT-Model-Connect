@@ -75,7 +75,7 @@ Lightning NVFP4/DFlash pair uses ONNX with
 Native fallback is attempted only during ordinary preparation; it cannot
 interpret unsupported packed checkpoints or replace a requested pair.
 
-See the [owning Nemotron-H recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/nemotron_h/EDGE_LLM.md)
+See the [owning Nemotron-H recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/nemotron_h/edge_llm/README.md)
 for the six recorded ordinary profiles, the qualified greedy DFlash pair,
 immutable revisions and unchanged quality gates. These are bounded historical
 local qualifications, not catalog-wide or current-head CI proof. The separate

@@ -994,7 +994,14 @@ def _runtime_config(
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Dispatch complete offload or execute the unchanged native implementation."""
-    from .dispatch import build as dispatch_build
+
+    from .edge_llm.config import NemotronHBuildRequest
+    from .edge_llm.dispatch import build_paired
+
+    if isinstance(request, NemotronHBuildRequest) and request.execution is not None:
+        build_paired(request, writer, request.execution)
+        return
+    from .edge_llm.dispatch import build as dispatch_build
 
     def _build_native(request: "BuildRequest", writer: "BundleWriter") -> None:
         """Build one Nemotron-H bundle."""
@@ -1100,12 +1107,3 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
                 writer.add_bytes(filename, path.read_bytes())
 
     dispatch_build(request, writer, _build_native)
-
-
-def build_with_inputs(request, writer, execution) -> None:
-    """Keep the complete DFlash pair owned by the family ONNX adapter."""
-    if execution.variant != "dflash" or tuple(x.role for x in execution.checkpoints) != ("draft",):
-        raise ValueError("Nemotron-H paired execution requires variant=dflash and one draft")
-    from .dispatch import build_dflash
-
-    build_dflash(request, writer, execution.checkpoints[0].model_dir)
