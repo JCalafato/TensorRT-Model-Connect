@@ -21,6 +21,15 @@ def local_target() -> dict:
     return detect_local_platform()
 
 
+def package_present() -> bool:
+    """Absence of the optional SDK is a non-match, not a failed Edge build."""
+    for prefix in cmake_prefixes():
+        manifest = prefix / "share/trtmc/edge-llm.json"
+        if manifest.exists() or manifest.is_symlink():
+            return True
+    return False
+
+
 def installed_package(target: dict) -> dict:
     """Resolve CMake installation via standard prefixes; never install anything.
 
