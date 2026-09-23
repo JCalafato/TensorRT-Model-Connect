@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import shlex
 import sys
@@ -23,16 +22,12 @@ from .model_support import (
 )
 
 
-def _parser(
-    prepare_family: object | None = None, *, build_hooks: object | None = None,
-    require_output: bool = True, require_model: bool = True,
-) -> argparse.ArgumentParser:
+def _parser(prepare_family: object | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trtmc")
     commands = parser.add_subparsers(dest="command", required=True)
-    build_parser = commands.add_parser("build", help="Build one TensorRT bundle", allow_abbrev=False)
-    if require_model:
-        build_parser.add_argument("model", help="Hugging Face model ID or local snapshot")
-    build_parser.add_argument("-o", "--output", type=Path, required=require_output)
+    build_parser = commands.add_parser("build", help="Build one TensorRT bundle")
+    build_parser.add_argument("model", help="Hugging Face model ID or local snapshot")
+    build_parser.add_argument("-o", "--output", type=Path, required=True)
     build_parser.add_argument(
         "--family", help="Select one compatible family instead of automatic resolution"
     )
@@ -51,9 +46,6 @@ def _parser(
     build_parser.add_argument("--fp32-layer", type=int, action="append", default=[])
     build_parser.add_argument("--dynamic-kv-cache", action="store_true")
     build_parser.add_argument("--verbose", action="store_true")
-    add_build_arguments = getattr(build_hooks, "add_build_arguments", None)
-    if callable(add_build_arguments):
-        add_build_arguments(build_parser)
     prepare_parser = commands.add_parser(
         "prepare-structure",
         help="Prepare one structure request without rebuilding its model bundle",
@@ -74,11 +66,7 @@ def _parser(
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    family_help = (
-        len(arguments) > 1 and arguments[0] == "build"
-        and any(arg in {"-h", "--help"} for arg in arguments)
-    )
-    base_parser = _parser(require_output=not family_help)
+    base_parser = _parser()
     if (
         len(arguments) > 1
         and arguments[0] == "prepare-structure"
@@ -86,39 +74,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         and arguments[1].startswith("-")
     ):
         base_parser.error("MODEL must immediately follow prepare-structure")
-    preliminary_arguments = (
-        [arg for arg in arguments if arg not in {"-h", "--help"}] if family_help else arguments
-    )
-    if arguments and arguments[0] == "build":
-        # Without a positional, parse_known_args preserves MODEL and family
-        # options in order. Never acquire a checkpoint from an unknown option's
-        # value; known core options may safely precede MODEL.
-        _, remaining = _parser(require_output=False, require_model=False).parse_known_args(
-            preliminary_arguments
-        )
-        if remaining and remaining[0].startswith("-") and remaining[0] != "--":
-            base_parser.error("MODEL must precede family options")
-        if family_help and not remaining:
-            base_parser.parse_args(arguments)
-            return 0
-    preliminary, _ = base_parser.parse_known_args(preliminary_arguments)
-    if family_help and not Path(preliminary.model).is_dir():
-        # Remote or missing inputs cannot provide local metadata. Help must
-        # remain side-effect free instead of acquiring a checkpoint.
-        base_parser.parse_args(arguments)
-        return 0
-    model_dir = (
-        Path(preliminary.model) if family_help
-        else _resolve_model(preliminary.model, preliminary.revision)
-    )
-    try:
-        metadata = load_model_metadata(model_dir)
-    except (ValueError, OSError):
-        if not family_help:
-            raise
-        # Empty/invalid local directories still have useful generic help.
-        base_parser.parse_args(arguments)
-        return 0
+    preliminary, _ = base_parser.parse_known_args(arguments)
+    model_dir = _resolve_model(preliminary.model, preliminary.revision)
+    metadata = load_model_metadata(model_dir)
     try:
         family, support = (
             resolve_family(metadata, preliminary.family)
@@ -129,11 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_family_error(error, arguments)
         return 2
     family_module = _load_family(family) if preliminary.command == "prepare-structure" else None
-    build_hooks = (
-        importlib.import_module(f"families.{family}.{support.build_cli_module}")
-        if preliminary.command == "build" and support.build_cli_module is not None else None
-    )
-    args = _parser(family_module, build_hooks=build_hooks).parse_args(arguments)
+    args = _parser(family_module).parse_args(arguments)
     if args.command == "prepare-structure":
         prepare = getattr(family_module, "prepare_structure_request", None)
         if not callable(prepare):
@@ -157,31 +111,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"family {family!r} does not support task {task!r}; "
             f"choose one of: {', '.join(support.tasks)}"
         )
-    request = BuildRequest(
-        model_dir=model_dir,
-        output_path=args.output,
-        precision=args.precision or support.default_precision,
-        backend=args.backend,
-        family=family,
-        task=task,
-        max_sequence_length=args.max_sequence_length,
-        image_height=args.image_height,
-        image_width=args.image_width,
-        video_num_frames=args.video_num_frames,
-        max_batch_size=args.max_batch_size,
-        tensor_parallel_size=args.tensor_parallel_size,
-        context_parallel_size=args.context_parallel_size,
-        quantization=args.quantization,
-        fp32_layers=tuple(args.fp32_layer),
-        dynamic_kv_cache=args.dynamic_kv_cache,
-        verbose=args.verbose,
+    build(
+        BuildRequest(
+            model_dir=model_dir,
+            output_path=args.output,
+            precision=args.precision or support.default_precision,
+            backend=args.backend,
+            family=family,
+            task=task,
+            max_sequence_length=args.max_sequence_length,
+            image_height=args.image_height,
+            image_width=args.image_width,
+            video_num_frames=args.video_num_frames,
+            max_batch_size=args.max_batch_size,
+            tensor_parallel_size=args.tensor_parallel_size,
+            context_parallel_size=args.context_parallel_size,
+            quantization=args.quantization,
+            fp32_layers=tuple(args.fp32_layer),
+            dynamic_kv_cache=args.dynamic_kv_cache,
+            verbose=args.verbose,
+        )
     )
-    prepare_build_request = getattr(build_hooks, "prepare_build_request", None)
-    if callable(prepare_build_request):
-        request = prepare_build_request(request, args)
-        if not isinstance(request, BuildRequest) or request.family != family:
-            raise TypeError("family prepare_build_request must preserve the owning BuildRequest")
-    build(request)
     return 0
 
 

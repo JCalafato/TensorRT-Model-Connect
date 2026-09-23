@@ -36,12 +36,6 @@ sizes, family-owned quantization selection, FP32 layer overrides, direct
 dynamic-KV opt-in, and optional graph transform. Each family must implement or
 explicitly reject every non-default request it receives.
 
-Optional CLI extensions are declared by the owning family's lightweight
-support module. The family registers its arguments and prepares a typed request
-before any GPU builder is imported. Core retains one ordinary family build
-entrypoint; execution selection, companion validation and runtime composition
-remain inside the family. No other family needs to change.
-
 ## Family build
 
 `families/<family>/model.py` exposes a plain `build(request, writer)` function.

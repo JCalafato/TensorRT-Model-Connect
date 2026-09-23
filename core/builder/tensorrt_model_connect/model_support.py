@@ -56,14 +56,8 @@ class FamilySupport:
     tasks: tuple[str, ...]
     default_task: str
     default_precision: str = "fp32"
-    build_cli_module: str | None = None
 
     def __post_init__(self) -> None:
-        if self.build_cli_module is not None and (
-            not isinstance(self.build_cli_module, str)
-            or any(_ID.fullmatch(part) is None for part in self.build_cli_module.split("."))
-        ):
-            raise ValueError("build_cli_module must name a module within the owning family")
         if not self.tasks or len(set(self.tasks)) != len(self.tasks):
             raise ValueError("family support tasks must be non-empty and unique")
         if any(_ID.fullmatch(task) is None for task in self.tasks):
@@ -103,7 +97,6 @@ def family_support(
     tasks: tuple[str, ...],
     default_task: str,
     default_precision: str = "fp32",
-    build_cli_module: str | None = None,
 ) -> DescribeSupport:
     """Create one exact, family-owned support function."""
 
@@ -117,7 +110,6 @@ def family_support(
         tasks=tasks,
         default_task=default_task,
         default_precision=default_precision,
-        build_cli_module=build_cli_module,
     )
 
     def describe(metadata: ModelMetadata) -> FamilySupport | None:

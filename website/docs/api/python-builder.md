@@ -29,26 +29,6 @@ resolved API directly.
 decides whether that directory is a Hugging Face snapshot or a prepared
 checkpoint; `BuildRequest` does not perform another discovery pass.
 
-## Family-owned build arguments
-
-A family may provide `add_build_arguments(parser)` and
-`prepare_build_request(request, args)` in a family-local module named by the lightweight
-`FamilySupport.build_cli_module` declaration. The CLI resolves the owner, registers only that family's options,
-and lets it return a family-owned `BuildRequest` subclass. The hook must retain
-the resolved family. Ordinary families need no changes.
-
-Core always calls the same `build(request)` and family `build(request, writer)`
-entrypoints. There is no shared execution-variant list, companion interpretation,
-GPU offload selection, or alternative-builder dispatch. The family owns all
-extra fields, validation and execution choices.
-
-Put MODEL before family-specific options. Known core options may precede MODEL.
-`trtmc build /path/to/model --help` shows the resolved family's options without
-importing its GPU builder. Help never downloads a checkpoint: remote model IDs
-or missing local directories show generic build help instead. Model resolution
-precedes family-specific argument
-validation; request preparation precedes backend import and bundle creation.
-
 ## Optional graph transform
 
 `BuildRequest.graph_transform` is an in-place callback invoked on the completed
