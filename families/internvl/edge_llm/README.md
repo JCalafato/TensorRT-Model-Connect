@@ -25,7 +25,7 @@ backend. Runtime loading dispatches on the family-owned Edge bundle marker.
 Enable the generic optional SDK with `TRTMC_ENABLE_EDGELLM=ON`, build it on the
 executing GPU, and expose its installation through `CMAKE_PREFIX_PATH`.
 The installed package must match the pin, SM, CUDA, and TensorRT identity.
-The existing public `trtmc build` request remains the entrypoint.
+The family-owned `trtmc internvl build` command uses the existing CLI protocol.
 
 `edge_llm/builder.py` maps the request into the pinned Python direct builder with
 `--components llm,visual`. It preserves both engines, processor/tokenizer
@@ -92,3 +92,9 @@ Ordinary builds without an installed optional Edge SDK select native without a
 warning. Malformed or incomplete installed packages still retain diagnostics and
 warn before native fallback. Temporary checkpoint/engine staging uses the bundle
 output directory filesystem (choose a scratch-backed output), not system /tmp.
+
+## Declared build command
+
+This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc internvl build`.
+Help is offline and does not need a local checkpoint. No shared parser hook or
+family registry entry is added.
