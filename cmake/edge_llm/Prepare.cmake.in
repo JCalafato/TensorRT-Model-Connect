@@ -30,7 +30,7 @@ function(create_environment destination)
       "${destination}")
   endif()
   # Pin even when ensurepip seeds a newer version; offline installs stay offline.
-  run("${destination}/bin/python" -I -m pip ${_pip_options} "pip==24.0")
+  run("${destination}/bin/python" -I -m pip ${_pip_options} "pip==26.2.1")
 endfunction()
 create_environment("@_edge_prefix@/libexec/trtmc-edge-llm")
 file(GLOB _trt_wheels "@TRTMC_EDGELLM_TRT_ROOT@/python/tensorrt-*-cp@Python3_VERSION_MAJOR@@Python3_VERSION_MINOR@-none-linux_@CMAKE_SYSTEM_PROCESSOR@.whl")
