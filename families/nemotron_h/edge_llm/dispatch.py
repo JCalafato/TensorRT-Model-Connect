@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import traceback
 
-from . import edge_llm
+from . import builder as edge_llm
 from .edge_quantization import source_quantization
 from .edge_config import topology_matches
 
@@ -136,3 +136,12 @@ def build_dflash(request, writer, draft: Path) -> None:
             raise NotImplementedError("Native Nemotron-H DFlash fallback is unavailable") from error
         edge_llm.publish(request, writer, files, marker)
         log_path.unlink()
+
+
+def build_paired(request, writer, execution) -> None:
+    """Keep the complete DFlash pair owned by the family ONNX adapter."""
+    execution.validate_local()
+    if execution.variant != "dflash" or tuple(x.role for x in execution.checkpoints) != ("draft",):
+        raise ValueError("Nemotron-H paired execution requires variant=dflash and one draft")
+
+    build_dflash(request, writer, execution.checkpoints[0].model_dir)

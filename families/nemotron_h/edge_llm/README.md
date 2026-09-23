@@ -2,7 +2,7 @@
 
 The family owns source-policy admission, command mapping, tokenizer/EOS semantics,
 engine composition and runtime orchestration. TensorRT Edge-LLM owns model graphs,
-lowering and execution. Provision the [optional native SDK](../../cmake/edgellm/README.md)
+lowering and execution. Provision the [optional native SDK](../../../cmake/edge_llm/README.md)
 from official GitHub Edge-LLM 0.10.1, revision
 `e8b29522938901f6df19ebeedd4b69bc8edbcd97`. No internal source changes or
 cross-compilation are used.
@@ -111,3 +111,34 @@ The earlier 4B-BF16 capacity4096 compiler failure, long-context/context-reuse,
 TP4, other models/platforms and stochastic equivalence remain outside this proof.
 Nano30B, Super120B and Omni are not qualified by the table above.
 No quality gate, failed result or hardware limitation is hidden by these passes.
+
+## Family-owned build options
+
+The generic CLI loads this family's `edge_llm.cli` hook only after resolving
+the model. The shared build API has no execution-mode or companion arguments.
+All variant validation and builder selection remain in this family.
+
+```sh
+trtmc build /path/to/target --family nemotron_h --precision fp16 \
+  --execution-variant dflash --companion draft=/path/to/draft \
+  -o model.bundle
+```
+
+Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+shows these family options using local metadata; remote-ID help does not download
+a checkpoint. For Python callers, use this family's request extension:
+
+```python
+from tensorrt_model_connect import build
+from families.nemotron_h.edge_llm.config import (
+    BuildExecutionInputs, NamedCheckpoint, with_execution,
+)
+
+# request is an ordinary BuildRequest owned by this family; draft_path is a Path.
+build(with_execution(request, BuildExecutionInputs(
+    "dflash", (NamedCheckpoint("draft", draft_path),),
+)))
+```
+
+A failed explicit pair is never replaced by a base-only bundle. Previously
+recorded full-model results above are historical, not fresh refactor-head E2Es.
