@@ -70,7 +70,7 @@ trtmc build /path/to/target --family qwen3_8 --precision fp16 \
   -o model.bundle
 ```
 
-Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+Put MODEL before family-specific options; known core options may precede MODEL. `trtmc build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
 a checkpoint. For Python callers, use this family's request extension:
 
@@ -88,3 +88,7 @@ build(with_execution(request, BuildExecutionInputs(
 
 A failed explicit pair is never replaced by a base-only bundle. Previously
 recorded full-model results above are historical, not fresh refactor-head E2Es.
+
+Request controls and the existing 9–1024 capacity range are checked before any
+Edge preparation. The native precision default is not changed: this paired
+profile explicitly requires FP16. Temporary staging uses the output filesystem.

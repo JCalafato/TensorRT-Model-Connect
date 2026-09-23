@@ -162,3 +162,88 @@ def test_qwen38_aliases_register_the_same_family_cli(model_type):
 
     support = describe(ModelMetadata({"model_type": model_type}, {}))
     assert support.build_cli_module == "edge_llm.cli"
+
+
+def _dspark_pair_request(tmp_path):
+    import json
+    from tensorrt_model_connect.build import BuildRequest
+    from families.qwen3_8.edge_llm.config import BuildExecutionInputs, NamedCheckpoint
+
+    source, draft = _edge_cli_source(tmp_path)
+    layers = {"layer0": {"quant_algo": "FP8"}, "layer1": {"quant_algo": "NVFP4"}}
+    base = {
+        "model_type": "qwen3_5", "output_gate_type": "sigmoid",
+        "hidden_size": 16, "vocab_size": 32, "num_hidden_layers": 8,
+        "max_position_embeddings": 4096, "linear_key_head_dim": 128,
+        "linear_value_head_dim": 128, "quantization_config": {
+            "quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+            "quantized_layers": layers, "kv_cache_scheme": {"type": "float"},
+        },
+    }
+    (source / "config.json").write_text(json.dumps(base))
+    (source / "hf_quant_config.json").write_text(json.dumps({"quantization": {
+        "quant_algo": "MIXED_PRECISION", "quantized_layers": layers,
+        "kv_cache_quant_algo": "FP8",
+    }}))
+    (draft / "config.json").write_text(json.dumps({
+        "architectures": ["DSparkDraftModel"], "hidden_size": 16, "vocab_size": 32,
+        "num_target_layers": 8, "max_position_embeddings": 4096,
+        "dspark_config": {"block_size": 7, "target_layer_ids": [1], "mask_token_id": 3},
+    }))
+    return (
+        BuildRequest(source, tmp_path / "out", "qwen3_8", "text_generation", "fp16"),
+        BuildExecutionInputs("dspark", (NamedCheckpoint("draft", draft),)),
+    )
+
+
+@pytest.mark.parametrize("overrides, message", [
+    ({"precision": "bf16"}, "--precision fp16"),
+    ({"backend": "trt_rtx"}, "requires backend=trt"),
+    ({"max_batch_size": 2}, "batch/TP/CP=1"),
+    ({"tensor_parallel_size": 2}, "batch/TP/CP=1"),
+    ({"dynamic_kv_cache": True}, "no dynamic KV"),
+    ({"quantization": "fp8"}, "quantization unset or nvfp4"),
+    ({"max_sequence_length": 8}, "above 8 and at most 1024"),
+    ({"max_sequence_length": 1025}, "above 8 and at most 1024"),
+    ({"max_sequence_length": 2048}, "above 8 and at most 1024"),
+])
+def test_dspark_request_errors_precede_adapter_work(tmp_path, monkeypatch, overrides, message):
+    from dataclasses import replace
+    from families.qwen3_8.edge_llm import dispatch
+
+    request, execution = _dspark_pair_request(tmp_path)
+    monkeypatch.setattr(dispatch, "build", lambda *_args, **_kw: pytest.fail("adapter work started"))
+    with pytest.raises(ValueError, match=message) as caught:
+        dispatch.build_paired(replace(request, **overrides), None, execution)
+    assert caught.value.__cause__ is None
+    assert not list(tmp_path.glob(".out.edge-*"))
+
+
+@pytest.mark.parametrize("limit", [9, 1024])
+def test_dspark_capacity_boundaries_keep_the_requested_pair(tmp_path, monkeypatch, limit):
+    from dataclasses import replace
+    from families.qwen3_8.edge_llm import dispatch
+
+    request, execution = _dspark_pair_request(tmp_path)
+    request = replace(request, max_sequence_length=limit)
+    seen = []
+
+    def build(original, writer, native, *, draft_dir):
+        assert original is request and draft_dir == execution.checkpoints[0].model_dir
+        with pytest.raises(NotImplementedError, match="Native Qwen3.8"):
+            native(original, writer)
+        seen.append(original)
+
+    monkeypatch.setattr(dispatch, "build", build)
+    dispatch.build_paired(request, None, execution)
+    assert seen == [request]
+
+
+def test_dspark_checkpoint_error_is_distinct_from_request_error(tmp_path, monkeypatch):
+    from families.qwen3_8.edge_llm import dispatch
+
+    request, execution = _dspark_pair_request(tmp_path)
+    (request.model_dir / "hf_quant_config.json").unlink()
+    monkeypatch.setattr(dispatch, "build", lambda *_args, **_kw: pytest.fail("adapter work started"))
+    with pytest.raises(ValueError, match="matching mixed-NVFP4 base"):
+        dispatch.build_paired(request, None, execution)

@@ -22,6 +22,18 @@ EDGE_DISPATCH = {
 }
 
 
+def request_matches(request) -> bool:
+    """Validate mapped request controls independently of checkpoint metadata."""
+    return (
+        request.backend == "trt" and request.task == "text_generation"
+        and request.precision.lower() == "fp16"
+        and request.quantization in {None, "nvfp4"}
+        and request.max_batch_size == request.tensor_parallel_size == request.context_parallel_size == 1
+        and not request.dynamic_kv_cache and not request.fp32_layers and request.graph_transform is None
+        and all(value is None for value in (request.image_height, request.image_width, request.video_num_frames))
+    )
+
+
 def candidate(request, raw: dict) -> bool:
     """Return whether this family's model/request contract can delegate to Edge."""
     config = raw.get("text_config", raw)
@@ -33,12 +45,7 @@ def candidate(request, raw: dict) -> bool:
         and config.get("linear_key_head_dim") == config.get("linear_value_head_dim") == 128
         and not config.get("num_experts")
         and source_quantization == "nvfp4"
-        and request.backend == "trt" and request.task == "text_generation"
-        and request.precision.lower() == "fp16"
-        and request.quantization in {None, source_quantization}
-        and request.max_batch_size == request.tensor_parallel_size == request.context_parallel_size == 1
-        and not request.dynamic_kv_cache and not request.fp32_layers and request.graph_transform is None
-        and all(value is None for value in (request.image_height, request.image_width, request.video_num_frames))
+        and request_matches(request)
     )
 
 
@@ -73,7 +80,9 @@ def build(request, writer, native, *, draft_dir: Path) -> None:
                                         dir=request.output_path.parent)
     os.close(descriptor)
     log_path = Path(name)
-    with tempfile.TemporaryDirectory(prefix="trtmc-qwen3_8-edge-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=f".{request.output_path.name}.edge-", dir=request.output_path.parent
+    ) as directory:
         try:
             target = edge_llm.local_target()
             key = (target["os"], target["arch"], target["sm"], request.precision.lower())
@@ -107,10 +116,17 @@ def build_paired(request, writer, execution) -> None:
 
     if execution.variant != "dspark" or tuple(x.role for x in execution.checkpoints) != ("draft",):
         raise ValueError("Qwen3.8 paired execution requires variant=dspark and one draft checkpoint")
+    if request.precision.lower() != "fp16":
+        raise ValueError("Qwen3.8 DSpark requires --precision fp16; the native default is unchanged")
+    if not request_matches(request):
+        raise ValueError(
+            "Qwen3.8 DSpark requires backend=trt, text_generation, batch/TP/CP=1, "
+            "quantization unset or nvfp4, and no dynamic KV, FP32 layers, graph or media overrides"
+        )
     draft_dir = execution.checkpoints[0].model_dir
     raw = json.loads((request.model_dir / "config.json").read_text())
     draft = json.loads((draft_dir / "config.json").read_text())
-    if not candidate(request, raw) or edge_llm.checkpoint_quantization(request.model_dir, raw) != "nvfp4":
+    if not candidate(request, raw):
         raise ValueError("The retained Qwen3.8 DSpark pair requires a matching mixed-NVFP4 base")
     base = raw.get("text_config", raw)
     if not isinstance(draft, dict) or draft.get("architectures") != ["DSparkDraftModel"]:
@@ -132,6 +148,8 @@ def build_paired(request, writer, execution) -> None:
     if type(mask) is not int or not 0 <= mask < base["vocab_size"]:
         raise ValueError("Invalid Qwen3.8 DSpark mask token")
     limit = request.max_sequence_length or min(base["max_position_embeddings"], 256)
+    if not 8 < limit <= 1024:
+        raise ValueError("Qwen3.8 DSpark requires max_sequence_length above 8 and at most 1024")
     capacity = draft.get("max_position_embeddings")
     if type(capacity) is not int or not 8 < limit <= capacity:
         raise ValueError("Requested context exceeds DSpark draft capacity or block minimum")
