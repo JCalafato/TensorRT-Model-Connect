@@ -389,7 +389,9 @@ def test_cuda_toolkit_version_uses_selected_compiler(monkeypatch, source):
     run = Mock(return_value=SimpleNamespace(stdout="Cuda compilation tools, release 13.3, V13.3.1"))
     monkeypatch.setattr(build_core.subprocess, "run", run)
     assert build_core._cuda_toolkit_version() == "13.3"
-    run.assert_called_once_with([compiler, "--version"], check=True, capture_output=True, text=True)
+    run.assert_called_once_with(
+        [compiler, "--version"], check=True, capture_output=True, text=True, timeout=10,
+    )
 
 
 def test_cuda_toolkit_version_does_not_guess_when_missing(monkeypatch):
@@ -405,3 +407,36 @@ def test_cuda_toolkit_version_rejects_unrecognized_output(monkeypatch):
     monkeypatch.setattr(build_core.subprocess, "run", lambda *_, **__: SimpleNamespace(stdout=""))
     with pytest.raises(RuntimeError, match="Cannot identify CUDA toolkit"):
         build_core._cuda_toolkit_version()
+
+@pytest.mark.parametrize("source, value, expected", [
+    ("CUDACXX", '"/tool kit/nvcc" --allow-unsupported-compiler',
+     ["/tool kit/nvcc", "--allow-unsupported-compiler"]),
+    ("CUDAToolkit_ROOT", "/tool kit", ["/tool kit/bin/nvcc"]),
+])
+def test_cuda_toolkit_compiler_arguments_and_spaces(monkeypatch, source, value, expected):
+    from unittest.mock import Mock
+
+    for name in ("CUDACXX", "CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(source, value)
+    run = Mock(return_value=SimpleNamespace(stdout="release 13.3, V13.3.1"))
+    monkeypatch.setattr(build_core.subprocess, "run", run)
+    assert build_core._cuda_toolkit_version() == "13.3"
+    run.assert_called_once_with(
+        [*expected, "--version"], check=True, capture_output=True, text=True, timeout=10,
+    )
+
+
+@pytest.mark.parametrize("failure", [
+    FileNotFoundError("compiler missing"),
+    build_core.subprocess.CalledProcessError(1, ["nvcc", "--version"]),
+    build_core.subprocess.TimeoutExpired(["nvcc", "--version"], 10),
+])
+def test_cuda_toolkit_compiler_failures_preserve_cause(monkeypatch, failure):
+    from unittest.mock import Mock
+
+    monkeypatch.setenv("CUDACXX", "/selected/nvcc")
+    monkeypatch.setattr(build_core.subprocess, "run", Mock(side_effect=failure))
+    with pytest.raises(RuntimeError, match="Cannot query CUDA toolkit") as caught:
+        build_core._cuda_toolkit_version()
+    assert caught.value.__cause__ is failure
