@@ -105,7 +105,7 @@ trtmc build /path/to/target --family qwen3_5 --precision fp16 \
   -o model.bundle
 ```
 
-Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+Put MODEL before family-specific options; known core options may precede MODEL. `trtmc build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
 a checkpoint. For Python callers, use this family's request extension:
 
@@ -123,3 +123,8 @@ build(with_execution(request, BuildExecutionInputs(
 
 A failed explicit pair is never replaced by a base-only bundle. Previously
 recorded full-model results above are historical, not fresh refactor-head E2Es.
+
+Ordinary builds without an installed optional Edge SDK select native without a
+warning. Malformed or incomplete installed packages still retain diagnostics and
+warn before native fallback. Temporary checkpoint/engine staging uses the bundle
+output directory filesystem (choose a scratch-backed output), not system /tmp.
