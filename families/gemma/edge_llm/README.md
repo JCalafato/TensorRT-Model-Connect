@@ -97,7 +97,8 @@ sampling equivalence or other model/platform combinations.
 
 The official Edge 0.10.1 static Gemma template omits the checkpoint's closed
 thought channel when thinking is disabled, and differs in enabled-thinking
-system-prefix handling. A first uncorrected MTP run produced `thought\nParis`
+system-prefix handling. A first uncorrected MTP run produced `thought
+Paris`
 instead of the independent reference `Paris`, failing NED 0.6154 against 0.15.
 The family now validates the source single-user template during build and
 renders it faithfully before calling Edge with raw text. Unicode whitespace
@@ -123,6 +124,10 @@ approved artifact cleanup, so replay requires rebuilding those exact profiles.
 
 ## Declared build command
 
-This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc gemma build`.
+This family uses the existing cli.json protocol introduced in #1310. The family
+owns its declaration, typed inputs and Python handler. The handler adapts those
+inputs to the unchanged builder API, preserving native/Edge dispatch and bundle
+publication. The legacy flat build command remains available for its existing
+ordinary options; new family options use `trtmc gemma build`.
 Help is offline and does not need a local checkpoint. No shared parser hook or
 family registry entry is added.

@@ -242,10 +242,12 @@ def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkey
 def test_bad_edge_cli_inputs_fail_before_backend_and_bundle(tmp_path, monkeypatch, options):
     from tensorrt_model_connect import family_cli as build_cli
 
+    from families.gemma import cli as owner
+
     source = _model_dir(tmp_path / "target", "gemma4_unified")
     output = tmp_path / "pair.bundle"
-    monkeypatch.setattr(build_core, "_select_backend", lambda *_: pytest.fail("backend touched"))
-    monkeypatch.setattr(build_core, "BundleWriter", lambda *_: pytest.fail("writer created"))
+    monkeypatch.setattr(owner, "select_backend", lambda *_: pytest.fail("backend touched"))
+    monkeypatch.setattr(owner, "BundleWriter", lambda *_: pytest.fail("writer created"))
     with pytest.raises(ValueError):
         build_cli.main(["gemma", "build", str(source), "-o", str(output), *options])
     assert not output.exists()
