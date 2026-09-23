@@ -77,7 +77,7 @@ offload and other platform routes are not enabled by this change.
 
 Provision the [native SDK](../user-guides/configure-runtime.md#optional-native-edge-llm-sdk),
 then add `--execution-variant dspark --companion draft=/path/to/draft` to the build
-CLI. See the [owning Qwen3.8 recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_8/EDGE_LLM.md)
+CLI. See the [owning Qwen3.8 recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_8/edge_llm/README.md)
 for exact revisions, capacities, sampling controls and quality evidence.
 The local paired qualification is not a registered manifest case and does not
 imply CI coverage of that pair or statistical sampling equivalence.
