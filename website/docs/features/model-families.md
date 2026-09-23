@@ -79,8 +79,8 @@ See the [owning Nemotron-H recipe](https://github.com/NVIDIA/TensorRT-Model-Conn
 for the six recorded ordinary profiles, the qualified greedy DFlash pair,
 immutable revisions and unchanged quality gates. These are bounded historical
 local qualifications, not catalog-wide or current-head CI proof. The separate
-direct-Edge9B-NVFP4 quality failure and longer-context failures remain open.
-The original plain9B case is registered in the owning E2E inventory; the other
+direct-Edge 9B-NVFP4 quality failure and longer-context failures remain open.
+The original plain 9B case is registered in the owning E2E inventory; the other
 exact profiles are not implied to run in CI.
 
 ## Runtime and validation
