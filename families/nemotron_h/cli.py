@@ -42,6 +42,8 @@ def build(
     execution_variant: str | None = None, companion: list[str] | tuple[str, ...] = (),
 ) -> int:
     """Run the declared owner command; help never imports this handler."""
+    if precision not in {"fp32", "fp16"}:
+        raise ValueError("Nemotron-H precision must be fp32 or fp16")
     execution = execution_inputs(execution_variant, companion)
     model_dir = resolve_model(model, revision)
     resolve_family(load_model_metadata(model_dir), "nemotron_h")

@@ -101,6 +101,9 @@ def build(request, writer, native) -> None:
                 traceback.print_exception(error, file=log)
             _LOG.warning("nemotron_h Edge build failed: %s. Diagnostics: %s. "
                          "Retrying native once with the unchanged request.", error, log_path, exc_info=True)
+        except BaseException:
+            log_path.unlink(missing_ok=True)
+            raise
         else:
             if adapter is not None:
                 edge_llm.publish(request, writer, files, marker)
