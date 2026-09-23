@@ -44,11 +44,22 @@ list(LENGTH _trt_wheels _wheel_count)
 if(NOT _wheel_count EQUAL 1)
   message(FATAL_ERROR "Expected exactly one TensorRT SDK wheel matching the native Python ABI")
 endif()
+# Match the exact CuPy versions required by the pinned upstream CuTe builder.
+# CuPy 12.3 also requires NumPy below 1.29.
+if("@CUDAToolkit_VERSION_MAJOR@" STREQUAL "12")
+  set(_edge_cupy_version 12.3.0)
+  set(_edge_numpy_version 1.26.4)
+elseif("@CUDAToolkit_VERSION_MAJOR@" STREQUAL "13")
+  set(_edge_cupy_version 13.6.0)
+  set(_edge_numpy_version 2.2.6)
+else()
+  message(FATAL_ERROR "Pinned EdgeLLM supports CUDA major 12 or 13")
+endif()
 run("@_edge_python@" -I -m pip ${_pip_options} --report "@_edge_prefix@/pip-report.json"
-  ${_trt_wheels} numpy==2.2.6 transformers==5.14.1 jinja2==3.1.6
+  ${_trt_wheels} "numpy==${_edge_numpy_version}" transformers==5.14.1 jinja2==3.1.6
   scikit-build-core==0.11.6 wheel==0.45.1 cmake==3.31.10 ninja==1.13.0
   "cuda-python>=@CUDAToolkit_VERSION_MAJOR@.@CUDAToolkit_VERSION_MINOR@,<@CUDAToolkit_VERSION_MAJOR@.@CUDAToolkit_VERSION_MINOR@.999"
-  "nvidia-cutlass-dsl[cu@CUDAToolkit_VERSION_MAJOR@]==4.7.0" "cupy-cuda@CUDAToolkit_VERSION_MAJOR@x==13.6.0")
+  "nvidia-cutlass-dsl[cu@CUDAToolkit_VERSION_MAJOR@]==4.7.0" "cupy-cuda@CUDAToolkit_VERSION_MAJOR@x==${_edge_cupy_version}")
 run("@_edge_python@" -I -m pip ${_pip_options} --no-deps --no-build-isolation "@_edge_source@")
 if("@TRTMC_EDGELLM_ONNX@")
   # Original exporter dependencies, isolated from the caller environment. Export
