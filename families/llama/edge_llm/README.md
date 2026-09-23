@@ -49,11 +49,12 @@ Supply `meta-llama/Llama-3.1-8B-Instruct` as the primary checkpoint and the loca
 `yuhuili/EAGLE3-LLaMA3.1-Instruct-8B` checkpoint as a named companion:
 
 ```python
-from tensorrt_model_connect import BuildExecutionInputs, NamedCheckpoint, build
+from tensorrt_model_connect import build
+from families.llama.edge_llm.config import BuildExecutionInputs, NamedCheckpoint, with_execution
 
-build(request, execution=BuildExecutionInputs(
+build(with_execution(request, BuildExecutionInputs(
     "eagle3", (NamedCheckpoint("draft", draft_checkpoint),)
-))
+)))
 ```
 
 `request` is the ordinary Llama `BuildRequest`; both checkpoint paths are local.
