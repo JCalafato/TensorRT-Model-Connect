@@ -161,6 +161,9 @@ def build_paired(request, writer, execution) -> None:
 
     def native_pair(original_request, original_writer):
         # A failure must never replace the requested pair with base-only decoding.
-        raise NotImplementedError("Native Qwen3.8 does not implement the requested DSpark variant")
+        raise NotImplementedError(
+            "Native Qwen3.8 does not implement the requested DSpark variant; "
+            "the qualified Edge route requires Linux x86_64, SM120 and FP16"
+        )
 
     build(request, writer, native_pair, draft_dir=draft_dir)

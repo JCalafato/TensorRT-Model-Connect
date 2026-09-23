@@ -247,3 +247,14 @@ def test_dspark_checkpoint_error_is_distinct_from_request_error(tmp_path, monkey
     monkeypatch.setattr(dispatch, "build", lambda *_args, **_kw: pytest.fail("adapter work started"))
     with pytest.raises(ValueError, match="matching mixed-NVFP4 base"):
         dispatch.build_paired(request, None, execution)
+
+
+@pytest.mark.parametrize("arch, sm", [("x86_64", 90), ("aarch64", 120)])
+def test_dspark_unqualified_platform_names_required_route(tmp_path, monkeypatch, arch, sm):
+    from families.qwen3_8.edge_llm import builder, dispatch
+
+    request, execution = _dspark_pair_request(tmp_path)
+    monkeypatch.setattr(builder, "local_target", lambda: {"os": "linux", "arch": arch, "sm": sm})
+    with pytest.raises(NotImplementedError, match="Linux x86_64, SM120 and FP16"):
+        dispatch.build_paired(request, None, execution)
+    assert not list(tmp_path.glob(".out.edge-*"))
