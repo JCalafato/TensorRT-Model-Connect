@@ -63,6 +63,10 @@ the exporter using the installed Python and obtain the native builder path from
 qualified model support. Reusing an installed package that lacks a requested
 capability is an error; no dependency installation occurs during model builds.
 The CUDA and TensorRT shared libraries must remain available to the executable.
+When building models, select the same native CUDA toolkit with CUDACXX (the
+NVCC executable) or CUDAToolkit_ROOT (the SDK root); CUDA_HOME, CUDA_PATH,
+and then NVCC on PATH are fallbacks. Platform admission reads this compiler's
+release, not the independently versioned cuda-python binding's build toolkit.
 
 Run the existing runtime and family checks against this installation
 (some tests require a local GPU):

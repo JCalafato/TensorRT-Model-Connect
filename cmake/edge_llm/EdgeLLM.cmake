@@ -32,7 +32,30 @@ set(TRTMC_EDGELLM_CUDA_ARCHITECTURE "${CMAKE_CUDA_ARCHITECTURES}" CACHE STRING "
 if(NOT TRTMC_EDGELLM_CUDA_ARCHITECTURE MATCHES "^[0-9]+$")
   message(FATAL_ERROR "Set TRTMC_EDGELLM_CUDA_ARCHITECTURE to one local GPU architecture, e.g. 80")
 endif()
+# Do not import this build tree's previous generated package before regenerating
+# it: its baked SDK checks and imported targets may describe the old configure.
+set(_edge_package_dir "${_edge_prefix}/lib/cmake/EdgeLLM")
+get_filename_component(_edge_package_real "${_edge_package_dir}" REALPATH)
+if(EdgeLLM_DIR)
+  get_filename_component(_edge_cached_real "${EdgeLLM_DIR}" REALPATH)
+  if(_edge_cached_real STREQUAL _edge_package_real)
+    unset(EdgeLLM_DIR CACHE)
+    unset(EdgeLLM_DIR)
+  endif()
+endif()
+set(_edge_saved_ignore_path "${CMAKE_IGNORE_PATH}")
+list(APPEND CMAKE_IGNORE_PATH "${_edge_package_dir}" "${_edge_package_real}")
 find_package(EdgeLLM ${_edge_version} EXACT CONFIG QUIET)
+set(CMAKE_IGNORE_PATH "${_edge_saved_ignore_path}")
+
+function(_edgellm_install_plugin)
+  # Preserve the complete SONAME chain when lib and lib64 differ. Install-time
+  # expansion also honors cmake --install --prefix and DESTDIR.
+  install(CODE "file(INSTALL
+    DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}\"
+    TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN
+    FILES \"$<TARGET_FILE:EdgeLLM::Plugin>\")" COMPONENT EdgeLLM)
+endfunction()
 if(EdgeLLM_FOUND AND NOT EdgeLLM_PREFIX STREQUAL _edge_prefix)
   if(NOT EdgeLLM_CUDA_ARCHITECTURE STREQUAL TRTMC_EDGELLM_CUDA_ARCHITECTURE)
     message(FATAL_ERROR "EdgeLLM package architecture ${EdgeLLM_CUDA_ARCHITECTURE} differs from requested ${TRTMC_EDGELLM_CUDA_ARCHITECTURE}")
@@ -49,7 +72,7 @@ if(EdgeLLM_FOUND AND NOT EdgeLLM_PREFIX STREQUAL _edge_prefix)
   if(TRTMC_EDGELLM_ONNX AND (NOT EdgeLLM_ONNX OR NOT EXISTS "${EdgeLLM_ONNX_BUILDER}"))
     message(FATAL_ERROR "EdgeLLM package lacks requested ONNX tools; rebuild with TRTMC_EDGELLM_ONNX=ON")
   endif()
-  install(FILES "$<TARGET_FILE:EdgeLLM::Plugin>" DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT EdgeLLM)
+  _edgellm_install_plugin()
   return()
 endif()
 
@@ -114,10 +137,11 @@ ExternalProject_Add_StepDependencies(trtmc_edgellm_dependency configure "${_edge
 ExternalProject_Add_StepDependencies(trtmc_edgellm_dependency install "${_edge_root}/Install.cmake")
 # Generated package targets refer to declared future byproducts; their build dependency
 # prevents consumers from compiling or linking until installation completes.
+set(EdgeLLM_DIR "${_edge_package_dir}" CACHE PATH "Edge-LLM package directory" FORCE)
 find_package(EdgeLLM ${_edge_version} EXACT CONFIG REQUIRED
   PATHS "${_edge_prefix}/lib/cmake/EdgeLLM" NO_DEFAULT_PATH)
 add_dependencies(EdgeLLM::Core trtmc_edgellm_dependency)
 add_dependencies(EdgeLLM::Plugin trtmc_edgellm_dependency)
 install(DIRECTORY "${_edge_prefix}/" DESTINATION . USE_SOURCE_PERMISSIONS COMPONENT EdgeLLM)
 # Family DSOs may use lib64; their dynamically loaded plugin must remain adjacent.
-install(FILES "$<TARGET_FILE:EdgeLLM::Plugin>" DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT EdgeLLM)
+_edgellm_install_plugin()

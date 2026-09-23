@@ -11,6 +11,8 @@ import os
 import platform
 import re
 import sys
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -98,6 +100,26 @@ def cmake_prefixes() -> list[Path]:
     return [*prefixes, Path(sys.prefix)]
 
 
+def _cuda_toolkit_version() -> str:
+    """Identify the selected native compiler, not cuda-python's build toolkit."""
+    compiler = os.environ.get("CUDACXX")
+    if not compiler:
+        root = next(
+            (os.environ[key] for key in ("CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH")
+             if os.environ.get(key)), None
+        )
+        compiler = str(Path(root) / "bin" / "nvcc") if root else shutil.which("nvcc")
+    if not compiler:
+        raise RuntimeError("CUDA toolkit not found; set CUDAToolkit_ROOT or CUDACXX")
+    result = subprocess.run(
+        [compiler, "--version"], check=True, capture_output=True, text=True,
+    )
+    version = re.search(r"release\s+(\d+\.\d+)", result.stdout)
+    if version is None:
+        raise RuntimeError(f"Cannot identify CUDA toolkit from {compiler} --version")
+    return version.group(1)
+
+
 def detect_local_platform() -> dict:
     """Return executing GPU and native SDK identity without selecting a model.
 
@@ -118,7 +140,7 @@ def detect_local_platform() -> dict:
 
     device = checked(runtime.cudaGetDevice())
     gpu = checked(runtime.cudaGetDeviceProperties(device))
-    cuda = checked(runtime.cudaRuntimeGetVersion())
+    cuda_version = _cuda_toolkit_version()
     try:
         release = platform.freedesktop_os_release() if sys.platform == "linux" else {}
     except OSError:
@@ -128,7 +150,7 @@ def detect_local_platform() -> dict:
         "os_version": release.get("VERSION_ID", platform.release()),
         "arch": platform.machine(),
         "sm": gpu.major * 10 + gpu.minor,
-        "cuda_version": f"{cuda // 1000}.{cuda % 1000 // 10}",
+        "cuda_version": cuda_version,
         "tensorrt_version": trt.__version__,
     }
 

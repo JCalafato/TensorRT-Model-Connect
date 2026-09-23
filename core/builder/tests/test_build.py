@@ -324,7 +324,7 @@ def native_platform_bindings(monkeypatch):
     runtime = SimpleNamespace(
         cudaGetDevice=Mock(return_value=(0, 3)),
         cudaGetDeviceProperties=Mock(return_value=(0, SimpleNamespace(major=8, minor=6))),
-        cudaRuntimeGetVersion=Mock(return_value=(0, 13030)),
+        cudaRuntimeGetVersion=Mock(return_value=(0, 13000)),
     )
     monkeypatch.setitem(sys.modules, "tensorrt", SimpleNamespace(__version__="11.1.0.106"))
     monkeypatch.setitem(sys.modules, "cuda.bindings", SimpleNamespace(runtime=runtime))
@@ -334,6 +334,7 @@ def native_platform_bindings(monkeypatch):
         build_core.platform, "freedesktop_os_release", lambda: {"VERSION_ID": "24.04"}
     )
     monkeypatch.setattr(build_core.platform, "release", lambda: "fallback-release")
+    monkeypatch.setattr(build_core, "_cuda_toolkit_version", lambda: "13.3")
     return runtime
 
 
@@ -357,11 +358,11 @@ def test_native_platform_uses_executing_cuda_device_and_full_sdk(
     }
     native_platform_bindings.cudaGetDevice.assert_called_once_with()
     native_platform_bindings.cudaGetDeviceProperties.assert_called_once_with(3)
-    native_platform_bindings.cudaRuntimeGetVersion.assert_called_once_with()
+    native_platform_bindings.cudaRuntimeGetVersion.assert_not_called()
 
 
 @pytest.mark.parametrize(
-    "failing", ["cudaGetDevice", "cudaGetDeviceProperties", "cudaRuntimeGetVersion"]
+    "failing", ["cudaGetDevice", "cudaGetDeviceProperties"]
 )
 def test_native_platform_propagates_cuda_discovery_failure(native_platform_bindings, failing):
     getattr(native_platform_bindings, failing).return_value = (35,)
@@ -374,3 +375,33 @@ def test_native_platform_retains_nonlinux_identity(native_platform_bindings, mon
     result = build_core.detect_local_platform()
     assert result["os"] == "win32"
     assert result["os_version"] == "fallback-release"
+
+@pytest.mark.parametrize("source", ["CUDACXX", "CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH", "PATH"])
+def test_cuda_toolkit_version_uses_selected_compiler(monkeypatch, source):
+    from unittest.mock import Mock
+
+    for name in ("CUDACXX", "CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    compiler = "/selected/bin/nvcc"
+    monkeypatch.setattr(build_core.shutil, "which", lambda _: compiler)
+    if source != "PATH":
+        monkeypatch.setenv(source, compiler if source == "CUDACXX" else "/selected")
+    run = Mock(return_value=SimpleNamespace(stdout="Cuda compilation tools, release 13.3, V13.3.1"))
+    monkeypatch.setattr(build_core.subprocess, "run", run)
+    assert build_core._cuda_toolkit_version() == "13.3"
+    run.assert_called_once_with([compiler, "--version"], check=True, capture_output=True, text=True)
+
+
+def test_cuda_toolkit_version_does_not_guess_when_missing(monkeypatch):
+    for name in ("CUDACXX", "CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(build_core.shutil, "which", lambda _: None)
+    with pytest.raises(RuntimeError, match="CUDA toolkit not found"):
+        build_core._cuda_toolkit_version()
+
+
+def test_cuda_toolkit_version_rejects_unrecognized_output(monkeypatch):
+    monkeypatch.setenv("CUDACXX", "/selected/nvcc")
+    monkeypatch.setattr(build_core.subprocess, "run", lambda *_, **__: SimpleNamespace(stdout=""))
+    with pytest.raises(RuntimeError, match="Cannot identify CUDA toolkit"):
+        build_core._cuda_toolkit_version()

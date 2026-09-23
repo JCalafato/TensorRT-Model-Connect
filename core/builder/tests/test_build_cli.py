@@ -544,7 +544,11 @@ def test_prepare_structure_requires_a_callable_family_hook(
 
 
 @pytest.mark.parametrize("explicit_family", [False, True])
-def test_build_family_hooks_forward_a_typed_request(monkeypatch, tmp_path, explicit_family):
+@pytest.mark.parametrize("core_prefix", [[], ["--verbose"], ["--family", "example_owner"]])
+@pytest.mark.parametrize("option", ["--example-setting", "--image"])
+def test_build_family_hooks_forward_a_typed_request(
+    monkeypatch, tmp_path, explicit_family, core_prefix, option
+):
     from dataclasses import dataclass
 
     @dataclass(frozen=True)
@@ -552,7 +556,7 @@ def test_build_family_hooks_forward_a_typed_request(monkeypatch, tmp_path, expli
         example_setting: str = ""
 
     def add_arguments(parser):
-        parser.add_argument("--example-setting", required=True)
+        parser.add_argument(option, dest="example_setting", required=True)
 
     def prepare(request, args):
         return ExampleRequest(**vars(request), example_setting=args.example_setting)
@@ -569,7 +573,7 @@ def test_build_family_hooks_forward_a_typed_request(monkeypatch, tmp_path, expli
     monkeypatch.setattr(build_cli, "_load_family", lambda *_: pytest.fail("GPU builder imported by CLI"))
     seen = []
     monkeypatch.setattr(build_cli, "build", seen.append)
-    arguments = ["build", str(tmp_path), "-o", str(tmp_path / "out"), "--example-setting", "verbatim"]
+    arguments = ["build", *core_prefix, str(tmp_path), "-o", str(tmp_path / "out"), option, "verbatim"]
     if explicit_family:
         arguments += ["--family", "example_owner"]
     assert build_cli.main(arguments) == 0
@@ -643,3 +647,30 @@ def test_remote_model_help_never_acquires_checkpoint(monkeypatch, capsys, help_o
     output = capsys.readouterr()
     assert "--precision" in output.out
     assert not output.err
+
+@pytest.mark.parametrize("metadata", [None, "", "{broken", "[]"])
+@pytest.mark.parametrize("prefix", [[], ["--family", "example_owner"]])
+def test_local_invalid_metadata_help_is_generic(monkeypatch, tmp_path, capsys, metadata, prefix):
+    if metadata is not None:
+        (tmp_path / "config.json").write_text(metadata)
+    monkeypatch.setattr(build_cli, "_resolve_model", lambda *_: pytest.fail("help acquired model"))
+    monkeypatch.setattr(build_cli, "build", lambda *_: pytest.fail("help built model"))
+    with pytest.raises(SystemExit) as error:
+        build_cli.main(["build", *prefix, str(tmp_path), "--help"])
+    assert error.value.code == 0
+    assert "--precision" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("prefix", [[], ["--family", "example_owner"], ["--verbose"]])
+def test_unknown_build_option_before_model_never_acquires(monkeypatch, tmp_path, prefix):
+    monkeypatch.setattr(build_cli, "_resolve_model", lambda *_: pytest.fail("download before parsing"))
+    with pytest.raises(SystemExit) as error:
+        build_cli.main(["build", *prefix, "--example-setting", "not-a-model",
+                        str(tmp_path), "-o", str(tmp_path / "out")])
+    assert error.value.code == 2
+
+
+def test_non_help_invalid_metadata_is_not_hidden(tmp_path):
+    (tmp_path / "config.json").write_text("{broken")
+    with pytest.raises(ValueError):
+        build_cli.main(["build", str(tmp_path), "-o", str(tmp_path / "out")])
