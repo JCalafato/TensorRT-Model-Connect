@@ -352,3 +352,21 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
         assert "Retrying native once" in caplog.text
     elif mode != "cancel":
         assert not logs and "Edge build failed" not in caplog.text
+
+
+def test_edge_windows_nonmatch_does_not_probe_compiler(tmp_path, monkeypatch, caplog):
+    import json
+    from tensorrt_model_connect.build import BuildRequest
+    from families.llama.edge_llm import builder, dispatch
+
+    (tmp_path / "config.json").write_text(json.dumps({"max_position_embeddings": 4096}))
+    request = BuildRequest(tmp_path, tmp_path / "out", "llama", "text_generation", "fp16")
+    monkeypatch.setattr(dispatch, "candidate", lambda *_: True)
+    monkeypatch.setattr(dispatch.sys, "platform", "win32")
+    monkeypatch.setenv("CUDACXX", r"C:\Program Files\CUDA\bin\nvcc.exe")
+    monkeypatch.setattr(builder, "package_present", lambda: True)
+    monkeypatch.setattr(builder, "local_target", lambda: pytest.fail("unqualified platform probed"))
+    seen = []
+    dispatch.build(request, None, lambda *args: seen.append(args))
+    assert seen == [(request, None)]
+    assert not caplog.text and not list(tmp_path.glob(".out.edge-*"))
