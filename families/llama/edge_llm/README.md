@@ -101,17 +101,18 @@ long-context behavior or stochastic equivalence is established by this table.
 
 ## Family-owned build options
 
-The generic CLI loads this family's `edge_llm.cli` hook only after resolving
-the model. The shared build API has no execution-mode or companion arguments.
+The existing family CLI reads this owner's cli.json and invokes cli.py.
+Edge-specific inputs and selection remain in edge_llm/; the shared parser,
+CLI protocol and build API gain no new options or hooks.
 All variant validation and builder selection remain in this family.
 
 ```sh
-trtmc build /path/to/target --family llama --precision fp16 \
+trtmc llama build /path/to/target --precision fp16 \
   --execution-variant eagle3 --companion draft=/path/to/draft \
   -o model.bundle
 ```
 
-Put MODEL before family-specific options; known core options may precede MODEL. `trtmc build /path/to/target --help`
+Options may precede or follow MODEL. `trtmc llama build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
 a checkpoint. For Python callers, use this family's request extension:
 
@@ -134,3 +135,9 @@ Ordinary builds without an installed optional Edge SDK select native without a
 warning. Malformed or incomplete installed packages still retain diagnostics and
 warn before native fallback. Temporary checkpoint/engine staging uses the bundle
 output directory filesystem (choose a scratch-backed output), not system /tmp.
+
+## Declared build command
+
+This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc llama build`.
+Help is offline and does not need a local checkpoint. No shared parser hook or
+family registry entry is added.

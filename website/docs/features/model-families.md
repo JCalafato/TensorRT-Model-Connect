@@ -103,6 +103,11 @@ and mechanics described in the
 
 ## Optional Llama Edge execution
 
+Use `trtmc llama build MODEL -o model.bundle` with the owning
+family\u0027s options. `trtmc llama build --help` works offline without
+a checkpoint or GPU imports. This uses the existing
+[family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
+
 The Llama family owns an optional native Edge-LLM 0.10.1 route for original
 unquantized sources with FP16 compute. Recorded ordinary Llama 3.1 8B and
 3.2 1B/3B profiles use SM80; the explicit Llama 3.1 8B + EAGLE3 pair uses SM120.

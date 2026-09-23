@@ -19,7 +19,7 @@ from .standard_decoder_builder import build_standard_decoder_engine
 
 
 if TYPE_CHECKING:
-    from tensorrt_model_connect.build import BuildRequest
+    from .build_request import BuildRequest
     from tensorrt_model_connect.bundle_writer import BundleWriter
 
 
@@ -159,6 +159,9 @@ def _runtime_config(model_dir: Path, config: ModelConfig, **updates) -> dict:
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Select complete-network offload or preserve the native Llama builder."""
+    from .build_request import coerce_request
+
+    request = coerce_request(request)
 
     from .edge_llm.config import LlamaBuildRequest
     from .edge_llm.dispatch import build_paired
