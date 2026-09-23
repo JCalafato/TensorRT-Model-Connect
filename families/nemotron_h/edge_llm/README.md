@@ -107,7 +107,7 @@ the other exact models/pair used local recipes with existing family helpers.
 
 The separate direct-Edge 9B-NVFP4 capacity 1024 run failed ROUGE-L 0.1957 against 0.20
 on a different SM120 GPU. The MC256 pass does not resolve that failure.
-The earlier 4B-BF16 capacity4096 compiler failure, long-context/context-reuse,
+The earlier 4B-BF16 capacity 4096 compiler failure, long-context/context-reuse,
 TP4, other models/platforms and stochastic equivalence remain outside this proof.
 Nano30B, Super120B and Omni are not qualified by the table above.
 No quality gate, failed result or hardware limitation is hidden by these passes.
@@ -151,6 +151,10 @@ output directory filesystem (choose a scratch-backed output), not system /tmp.
 
 ## Declared build command
 
-This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc nemotron_h build`.
+This family uses the existing cli.json protocol introduced in #1310. The family
+owns its declaration, typed inputs and Python handler. The handler adapts those
+inputs to the unchanged builder API, preserving native/Edge dispatch and bundle
+publication. The legacy flat build command remains available for its existing
+ordinary options; new family options use `trtmc nemotron_h build`.
 Help is offline and does not need a local checkpoint. No shared parser hook or
 family registry entry is added.

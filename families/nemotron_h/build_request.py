@@ -88,6 +88,8 @@ def coerce_request(request: object) -> BuildRequest:
         value = getattr(request, name, default)
         if name == "quantization" and value == "none":
             continue
+        if name == "fp32_layers" and isinstance(value, (list, tuple)) and not value:
+            continue
         if value != default:
             raise NotImplementedError(f"nemotron_h does not support {name}")
     names = {field.name for field in fields(BuildRequest)}
