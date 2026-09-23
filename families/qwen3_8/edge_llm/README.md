@@ -60,17 +60,18 @@ rather than relying only on the version label.
 
 ## Family-owned build options
 
-The generic CLI loads this family's `edge_llm.cli` hook only after resolving
-the model. The shared build API has no execution-mode or companion arguments.
+The existing family CLI reads this owner's cli.json and invokes cli.py.
+Edge-specific inputs and selection remain in edge_llm/; the shared parser,
+CLI protocol and build API gain no new options or hooks.
 All variant validation and builder selection remain in this family.
 
 ```sh
-trtmc build /path/to/target --family qwen3_8 --precision fp16 \
+trtmc qwen3_8 build /path/to/target --precision fp16 \
   --execution-variant dspark --companion draft=/path/to/draft \
   -o model.bundle
 ```
 
-Put MODEL before family-specific options; known core options may precede MODEL. `trtmc build /path/to/target --help`
+Options may precede or follow MODEL. `trtmc qwen3_8 build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
 a checkpoint. For Python callers, use this family's request extension:
 
@@ -92,3 +93,9 @@ recorded full-model results above are historical, not fresh refactor-head E2Es.
 Request controls and the existing 9–1024 capacity range are checked before any
 Edge preparation. The native precision default is not changed: this paired
 profile explicitly requires FP16. Temporary staging uses the output filesystem.
+
+## Declared build command
+
+This family uses the existing cli.json protocol introduced in #1310. The family\nowns its declaration, typed inputs and Python handler. The handler adapts those\ninputs to the unchanged builder API, preserving native/Edge dispatch and bundle\npublication. The legacy flat build command remains available for its existing\nordinary options; new family options use `trtmc qwen3_8 build`.
+Help is offline and does not need a local checkpoint. No shared parser hook or
+family registry entry is added.
