@@ -55,7 +55,7 @@ def descriptor(value: dict) -> tuple | None:
         return None
     group = q.get("group_size", 1 if precision == "fp8" else 16)
     # FP8 projections use scalar scaling, not grouped packing. ModelOpt emits
-    # either1 (parser default) or16 (export metadata); neither changes FP8 layout.
+    # either 1 (parser default) or 16 (export metadata); neither changes FP8 layout.
     if type(group) is not int or group not in ({1, 16} if precision == "fp8" else {16}):
         return None
     if any(key in q for key in ("config_groups", "quantized_layers", "kv_cache_scheme")):

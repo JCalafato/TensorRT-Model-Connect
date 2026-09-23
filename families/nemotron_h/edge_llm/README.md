@@ -21,8 +21,8 @@ native ONNX builder. Enable `TRTMC_EDGELLM_ALL_KERNELS=ON` and
 `TRTMC_EDGELLM_ONNX=ON`, set `CMAKE_PREFIX_PATH` to the SDK installation, and
 configure the runtime with `TRTMC_ENABLE_EDGELLM=ON`. Add
 `--execution-variant dflash --companion draft=/path/to/draft` to the build CLI,
-or pass `BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft_path),))`
-to the Python build API.
+or wrap the request with this family's `with_execution(request, inputs)`
+before calling `build`, as the Python example below shows.
 
 Both paired engines are mandatory. The ONNX graph supplies the intermediate
 Mamba/replay states required to commit accepted draft tokens; the experimental
@@ -38,7 +38,7 @@ Cancellation, publication and runtime errors propagate without retry.
 ## Request and runtime contracts
 
 Admission requires compatible Nemotron-H text topology and source quantization,
-FP16 compute, TP1/batch1/context-parallel1, and no unmapped build controls.
+FP16 compute, TP 1/batch 1/context-parallel 1, and no unmapped build controls.
 The published platform routes are native x86_64 SM80 for plain sources and
 SM120 for plain/FP8/NVFP4 sources. These routes are admission rules, not proof for
 every compatible checkpoint or capacity.
@@ -64,20 +64,20 @@ inference.
 
 These are **historical local Model Connect build/inference qualifications**,
 not assertions that every publication head or CI executes these profiles.
-CUDA 13.3 and TensorRT 11.1.0.106 were used. Ordinary MC profiles use capacity256;
-the DFlash profile uses input/KV1024. All are text-only TP1/batch1.
-Independent NED must be at most0.15; the original Edge128-token fixture gates
+CUDA 13.3 and TensorRT 11.1.0.106 were used. Ordinary MC profiles use capacity 256;
+the DFlash profile uses input/KV1024. All are text-only TP 1/batch 1.
+Independent NED must be at most 0.15; the original Edge 128-token fixture gates
 remain ROUGE-1 >=0.25 and ROUGE-L >=0.20.
 
 | Exact source model | GPU | Independent gate | MC ROUGE-1 / ROUGE-L |
 | --- | --- | --- | --- |
-| NVIDIA-Nemotron-3-Nano-4B-BF16 | SM120 | NED0.0 | 0.5371 / 0.2514 |
-| NVIDIA-Nemotron-3-Nano-4B-FP8 | SM120 | NED0.0 | 0.5402 / 0.2644 |
+| NVIDIA-Nemotron-3-Nano-4B-BF16 | SM120 | NED 0.0 | 0.5371 / 0.2514 |
+| NVIDIA-Nemotron-3-Nano-4B-FP8 | SM120 | NED 0.0 | 0.5402 / 0.2644 |
 | NVIDIA-Nemotron-Nano-9B-v2 | SM80 | Existing HF pytest gate passed; numeric NED not serialized | 0.4318 / 0.2727 |
-| NVIDIA-Nemotron-Nano-9B-v2-FP8 | SM120 | NED0.0 | 0.3750 / 0.2614 |
-| NVIDIA-Nemotron-Nano-9B-v2-NVFP4 | SM120 | NED0.0 | 0.4130 / 0.2391 |
-| NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 | SM120 | NED0.0 | 0.4643 / 0.2500 |
-| Same Lightning target + DFlash companion | SM120 | NED0.0 | 0.4848 / 0.2545 |
+| NVIDIA-Nemotron-Nano-9B-v2-FP8 | SM120 | NED 0.0 | 0.3750 / 0.2614 |
+| NVIDIA-Nemotron-Nano-9B-v2-NVFP4 | SM120 | NED 0.0 | 0.4130 / 0.2391 |
+| NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 | SM120 | NED 0.0 | 0.4643 / 0.2500 |
+| Same Lightning target + DFlash companion | SM120 | NED 0.0 | 0.4848 / 0.2545 |
 
 All models are from the public `nvidia` namespace. Immutable revisions, in table
 order, are:
@@ -100,12 +100,12 @@ sampling parity.
 Passing payloads were retired with approval; compact results and provenance were
 retained. Replaying all seven model checks requires rebuilding those payloads.
 Fresh publication compilation/unit/source checks must be reported separately.
-Only the existing plain9B case is a registered owning E2E among these profiles;
+Only the existing plain 9B case is a registered owning E2E among these profiles;
 the other exact models/pair used local recipes with existing family helpers.
 
 ## Still outside these qualifications
 
-The separate direct-Edge9B-NVFP4 capacity1024 run failed ROUGE-L0.1957 against0.20
+The separate direct-Edge 9B-NVFP4 capacity 1024 run failed ROUGE-L 0.1957 against 0.20
 on a different SM120 GPU. The MC256 pass does not resolve that failure.
 The earlier 4B-BF16 capacity4096 compiler failure, long-context/context-reuse,
 TP4, other models/platforms and stochastic equivalence remain outside this proof.
