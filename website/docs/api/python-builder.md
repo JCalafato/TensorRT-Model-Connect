@@ -42,7 +42,7 @@ entrypoints. There is no shared execution-variant list, companion interpretation
 GPU offload selection, or alternative-builder dispatch. The family owns all
 extra fields, validation and execution choices.
 
-Put the model immediately after `build` when using family-specific options.
+Put MODEL before family-specific options. Known core options may precede MODEL.
 `trtmc build /path/to/model --help` shows the resolved family's options without
 importing its GPU builder. Help never downloads a checkpoint: remote model IDs
 or missing local directories show generic build help instead. Model resolution
