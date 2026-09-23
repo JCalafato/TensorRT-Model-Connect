@@ -84,3 +84,12 @@ when replacing an older SDK that included these private console scripts.
 Preparation verifies the actual Git checkout against the official pin before
 installing dependencies, including on CMake versions with older disconnected
 update behavior.
+
+CUDA 12 provisioning requires Python 3.10-3.12. Its pinned CuPy 12.3 kernel
+compiler uses a separate build-only environment with NumPy 1.26.4; the installed
+SDK and ONNX exporter use NumPy 2.2.6. Both environments must pass pip check.
+CUDA 13 uses the SDK environment for kernel compilation. Bootstrap pip is pinned
+to 24.0 and cuda-python to 12.9.7 (CUDA 12) or 13.3.1 (CUDA 13); these bindings
+do not determine the native toolkit identity. Offline wheelhouses must include
+these exact pins and the dependencies for both environments. The kernel-only
+environment and its dependency report remain under the dependency build root.
