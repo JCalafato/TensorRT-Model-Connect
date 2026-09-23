@@ -104,7 +104,10 @@ def cmake_prefixes() -> list[Path]:
 def _cuda_toolkit_version() -> str:
     """Identify the selected native compiler, not cuda-python's build toolkit."""
     compiler = os.environ.get("CUDACXX")
-    command = shlex.split(compiler) if compiler else []
+    try:
+        command = shlex.split(compiler) if compiler else []
+    except ValueError as error:
+        raise RuntimeError(f"Invalid CUDACXX command: {error}") from error
     if not compiler:
         root = next(
             (os.environ[key] for key in ("CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH")

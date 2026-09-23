@@ -182,6 +182,13 @@ find_package(EdgeLLM ${_edge_version} EXACT CONFIG REQUIRED
   PATHS "${_edge_prefix}/lib/cmake/EdgeLLM" NO_DEFAULT_PATH)
 add_dependencies(EdgeLLM::Core trtmc_edgellm_dependency)
 add_dependencies(EdgeLLM::Plugin trtmc_edgellm_dependency)
-install(DIRECTORY "${_edge_prefix}/" DESTINATION . USE_SOURCE_PERMISSIONS COMPONENT EdgeLLM)
+# Runtime consumers use the interpreter/modules and the prefix-relative launcher.
+# Build-only console scripts/activation files embed build-tree paths; keep them
+# available for rebuilding the dependency, but do not publish them in the SDK.
+install(DIRECTORY "${_edge_prefix}/" DESTINATION . USE_SOURCE_PERMISSIONS COMPONENT EdgeLLM
+  PATTERN "libexec/trtmc-edge-llm/bin" EXCLUDE)
+install(DIRECTORY "${_edge_prefix}/libexec/trtmc-edge-llm/bin/"
+  DESTINATION libexec/trtmc-edge-llm/bin USE_SOURCE_PERMISSIONS COMPONENT EdgeLLM
+  FILES_MATCHING REGEX "/python([0-9]+(\\.[0-9]+)?)?$")
 # Family DSOs may use lib64; their dynamically loaded plugin must remain adjacent.
 _edgellm_install_plugin()

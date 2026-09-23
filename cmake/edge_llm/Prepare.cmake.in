@@ -2,6 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Executed only by the explicit CMake dependency build, never by model dispatch.
 cmake_minimum_required(VERSION 3.20)
+# Older CMake can skip a disconnected Git update when the requested pin changes.
+# Never label an old checkout as the newly requested official snapshot.
+find_package(Git REQUIRED)
+execute_process(COMMAND "${GIT_EXECUTABLE}" -C "@_edge_source@" rev-parse HEAD
+  OUTPUT_VARIABLE _edge_checkout_revision OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND_ERROR_IS_FATAL ANY)
+if(NOT _edge_checkout_revision STREQUAL "@_edge_revision@")
+  message(FATAL_ERROR "EdgeLLM checkout does not match the pinned revision; use a fresh dependency build directory")
+endif()
 include("@_edge_template_dir@/CheckNative.cmake")
 _edgellm_check_json_headers("@_edge_json_include@" "@_edge_source@/3rdParty/nlohmannJson")
 function(run)
