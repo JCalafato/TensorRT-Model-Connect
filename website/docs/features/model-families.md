@@ -69,7 +69,7 @@ wall-clock speedup claim.
 ### Qwen3.8 paired ONNX execution
 
 Use `trtmc qwen3_8 build MODEL -o model.bundle` with the owning
-family\u0027s options. `trtmc qwen3_8 build --help` works offline without
+family's options. `trtmc qwen3_8 build --help` works offline without
 a checkpoint or GPU imports. This uses the existing
 [family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
 
