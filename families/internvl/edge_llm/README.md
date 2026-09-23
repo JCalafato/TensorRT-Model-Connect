@@ -87,3 +87,8 @@ The owning E2E still requires nonempty, finite, nonzero features and then runs
 its existing generation-quality comparison. No thresholds were weakened and no
 new test framework was introduced. The standalone cosine contract remains
 unchanged; a health assertion alone is not a claim of HF feature parity.
+
+Ordinary builds without an installed optional Edge SDK select native without a
+warning. Malformed or incomplete installed packages still retain diagnostics and
+warn before native fallback. Temporary checkpoint/engine staging uses the bundle
+output directory filesystem (choose a scratch-backed output), not system /tmp.

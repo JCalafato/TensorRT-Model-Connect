@@ -124,13 +124,18 @@ def build(request, writer, native) -> None:
     if not candidate(request, raw):
         native(request, writer)
         return
+    if not edge_llm.package_present():
+        native(request, writer)
+        return
     failure = None
     descriptor, name = tempfile.mkstemp(
         prefix=f".{request.output_path.name}.edge-", suffix=".log", dir=request.output_path.parent
     )
     os.close(descriptor)
     log_path = Path(name)
-    with tempfile.TemporaryDirectory(prefix="trtmc-internvl-edge-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=f".{request.output_path.name}.edge-", dir=request.output_path.parent
+    ) as directory:
         try:
             target = edge_llm.local_target()
             weight_format = edge_llm.request_weight_format(request, raw)
