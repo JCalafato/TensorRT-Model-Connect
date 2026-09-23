@@ -104,7 +104,7 @@ and mechanics described in the
 ### Optional InternVL Edge execution
 
 Use `trtmc internvl build MODEL -o model.bundle` with the owning
-family\u0027s options. `trtmc internvl build --help` works offline without
+family's options. `trtmc internvl build --help` works offline without
 a checkpoint or GPU imports. This uses the existing
 [family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
 
