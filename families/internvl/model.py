@@ -393,7 +393,7 @@ def _tokenizer_runtime_contract(model_dir: Path) -> dict[str, object]:
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Select complete-network offload or preserve the native InternVL builder."""
-    from .dispatch import build as dispatch_build
+    from .edge_llm.dispatch import build as dispatch_build
 
     def _build_native(request: "BuildRequest", writer: "BundleWriter") -> None:
         """Build one InternVL vision-language bundle."""
