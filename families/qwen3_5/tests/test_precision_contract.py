@@ -115,13 +115,12 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
     ["--execution-variant", "dflash", "--companion", "draft=https://example.com/model"],
 ])
 def test_bad_edge_cli_inputs_fail_before_backend(tmp_path, monkeypatch, options):
-    import importlib
     from tensorrt_model_connect import family_cli as build_cli
 
-    core = importlib.import_module("tensorrt_model_connect.build")
+    from families.qwen3_5 import cli as owner
     source, _ = _edge_cli_source(tmp_path)
-    monkeypatch.setattr(core, "_select_backend", lambda *_: pytest.fail("backend touched"))
-    monkeypatch.setattr(core, "BundleWriter", lambda *_: pytest.fail("writer created"))
+    monkeypatch.setattr(owner, "select_backend", lambda *_: pytest.fail("backend touched"))
+    monkeypatch.setattr(owner, "BundleWriter", lambda *_: pytest.fail("writer created"))
     with pytest.raises(ValueError):
         build_cli.main(["qwen3_5", "build", str(source), "-o", str(tmp_path / "out"), *options])
 
@@ -272,7 +271,7 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
     if mode in {"corrupt", "failure", "device_failure"}:
         assert len(logs) == 1 and "Traceback" in logs[0].read_text()
         assert "Retrying native once" in caplog.text
-    elif mode != "cancel":
+    else:
         assert not logs and "Edge build failed" not in caplog.text
 
 
