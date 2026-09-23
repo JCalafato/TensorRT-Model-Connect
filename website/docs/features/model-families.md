@@ -110,5 +110,5 @@ local public/direct/HF qualification; this is not catalog-wide or fresh-head CI
 qualification. The existing 2B/8B image-health test reads actual Edge visual
 features through a small family-owned test helper without changing its gates.
 Quantized sources, InternVL3.5, and multi-image public requests are excluded.
-See the [family recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/internvl/docs/edge-llm.md)
+See the [family recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/internvl/edge_llm/README.md)
 for exact source revisions, evidence boundaries, and replay requirements.

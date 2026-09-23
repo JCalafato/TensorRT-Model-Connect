@@ -149,3 +149,37 @@ def test_official_prompt_adds_image_placeholder_without_changing_user_text() -> 
     prompt = _official_prompt(Processor(), user_prompt)
     assert prompt.count(user_prompt) == 1
     assert "<IMG_CONTEXT>" in prompt
+
+
+def test_ordinary_cli_keeps_edge_selection_in_the_family(tmp_path, monkeypatch):
+    import json
+    from tensorrt_model_connect import build_cli
+    from families.internvl.edge_llm import dispatch
+
+    source = tmp_path / "target"
+    source.mkdir()
+    (source / "config.json").write_text(json.dumps({"model_type": "internvl"}))
+    output = tmp_path / "model.bundle"
+    seen = []
+
+    def select(request, writer, native):
+        assert callable(native)
+        assert request.family == "internvl"
+        assert request.task == "vision_language_generation"
+        seen.append(request)
+        writer.set_header(family=request.family, task=request.task, backend=request.backend)
+        writer.add_json("edge-test.json", {"family": request.family})
+
+    monkeypatch.setattr(dispatch, "build", select)
+    assert build_cli.main(["build", str(source), "-o", str(output)]) == 0
+    assert len(seen) == 1
+    assert output.is_file()
+
+
+def test_internvl_does_not_register_unowned_companion_options():
+    from tensorrt_model_connect.model_support import ModelMetadata
+    from families.internvl.support import describe
+
+    support = describe(ModelMetadata({"model_type": "internvl"}, {}))
+    assert support is not None
+    assert support.build_cli_module is None

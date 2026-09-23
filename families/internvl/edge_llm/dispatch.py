@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import traceback
 
-from . import edge_llm
+from . import builder as edge_llm
 
 _LOG = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ executing GPU, and expose its installation through `CMAKE_PREFIX_PATH`.
 The installed package must match the pin, SM, CUDA, and TensorRT identity.
 The existing public `trtmc build` request remains the entrypoint.
 
-`edge_llm.py` maps the request into the pinned Python direct builder with
+`edge_llm/builder.py` maps the request into the pinned Python direct builder with
 `--components llm,visual`. It preserves both engines, processor/tokenizer
 metadata, chat template, and the checkpoint required for external weights.
 The family C++ adapter uses the installed Edge runtime API; it does not
