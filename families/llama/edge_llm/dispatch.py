@@ -138,6 +138,9 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
                 log_path,
                 exc_info=True,
             )
+        except BaseException:
+            log_path.unlink(missing_ok=True)
+            raise
         else:
             # Edge preparation did not touch writer; publication cannot fallback.
             if adapter is not None:
@@ -196,6 +199,6 @@ def build_paired(request, writer, execution) -> None:
 
     def native_pair(original_request, original_writer):
         # Never turn a failed explicit pair into an ordinary base-only bundle.
-        raise ValueError("Native Llama does not implement the requested EAGLE3 execution variant")
+        raise ValueError("Native Llama does not implement EAGLE3; use the qualified Edge route on Linux x86_64 SM120 with FP16 weights")
 
     build(request, writer, native_pair, draft_dir=draft_dir)
