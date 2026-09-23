@@ -94,3 +94,4 @@ do not determine the native toolkit identity. Offline wheelhouses must include
 these exact pins and the dependencies for both environments. The kernel-only
 environment and its dependency report remain under the dependency build root.
 CUDA 13 provisioning requires Python 3.10-3.13 because of the pinned NumPy wheel support.
+The selected Python wheel and imported TensorRT version must match the exact native SDK header/library version; an ABI-compatible wheel from another release is rejected.
