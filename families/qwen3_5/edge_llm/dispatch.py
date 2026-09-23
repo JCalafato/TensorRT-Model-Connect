@@ -98,6 +98,9 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
     if not candidate(request, raw):
         native(request, writer)
         return
+    if draft_dir is None and not edge_llm.package_present():
+        native(request, writer)
+        return
     capacity = config.get("max_position_embeddings")
     if type(capacity) is not int or capacity <= 0:
         raise ValueError("checkpoint max_position_embeddings must be a positive integer")
@@ -109,7 +112,9 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
     )
     os.close(descriptor)
     log_path = Path(name)
-    with tempfile.TemporaryDirectory(prefix="trtmc-qwen3_5-edge-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=f".{request.output_path.name}.edge-", dir=request.output_path.parent
+    ) as directory:
         try:
             target = edge_llm.local_target()
             key = (target["os"], target["arch"], target["sm"], request.precision.lower())
