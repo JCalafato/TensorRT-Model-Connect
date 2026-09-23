@@ -68,6 +68,11 @@ wall-clock speedup claim.
 
 ### Qwen3.8 paired ONNX execution
 
+Use `trtmc qwen3_8 build MODEL -o model.bundle` with the owning
+family\u0027s options. `trtmc qwen3_8 build --help` works offline without
+a checkpoint or GPU imports. This uses the existing
+[family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
+
 The Qwen3.8 family owns explicit mixed-NVFP4 target plus DSpark block7 execution
 through the optional pinned native Edge-LLM SDK. The qualified profile uses
 `RadixArk/Qwen3.8-27B-NVFP4` and `RadixArk/Qwen3.8-27B-DSpark`, text-only

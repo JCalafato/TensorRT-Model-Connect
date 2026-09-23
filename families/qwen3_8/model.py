@@ -82,6 +82,9 @@ def _runtime_config(model_dir: Path, config: ModelConfig, model: Qwen38Model, **
 
 def build(request, writer) -> None:
     """Build one Qwen3.8 hybrid text-generation bundle."""
+    from .build_request import coerce_request
+
+    request = coerce_request(request)
 
     from .edge_llm.config import Qwen38BuildRequest
     from .edge_llm.dispatch import build_paired
