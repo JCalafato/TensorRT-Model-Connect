@@ -10,6 +10,7 @@ import importlib
 import os
 import platform
 import re
+import shlex
 import sys
 import shutil
 import subprocess
@@ -103,17 +104,22 @@ def cmake_prefixes() -> list[Path]:
 def _cuda_toolkit_version() -> str:
     """Identify the selected native compiler, not cuda-python's build toolkit."""
     compiler = os.environ.get("CUDACXX")
+    command = shlex.split(compiler) if compiler else []
     if not compiler:
         root = next(
             (os.environ[key] for key in ("CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH")
              if os.environ.get(key)), None
         )
         compiler = str(Path(root) / "bin" / "nvcc") if root else shutil.which("nvcc")
-    if not compiler:
+        command = [compiler] if compiler else []
+    if not command:
         raise RuntimeError("CUDA toolkit not found; set CUDAToolkit_ROOT or CUDACXX")
-    result = subprocess.run(
-        [compiler, "--version"], check=True, capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            [*command, "--version"], check=True, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(f"Cannot query CUDA toolkit from {compiler}: {error}") from error
     version = re.search(r"release\s+(\d+\.\d+)", result.stdout)
     if version is None:
         raise RuntimeError(f"Cannot identify CUDA toolkit from {compiler} --version")
