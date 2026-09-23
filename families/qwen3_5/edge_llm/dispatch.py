@@ -133,6 +133,9 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
                 log_path,
                 exc_info=True,
             )
+        except BaseException:
+            log_path.unlink(missing_ok=True)
+            raise
         else:
             # Edge preparation did not touch writer; publication cannot fallback.
             if adapter is not None:
