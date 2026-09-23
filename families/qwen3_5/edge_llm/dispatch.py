@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import traceback
 
-from . import edge_llm
+from . import builder as edge_llm
 
 _LOG = logging.getLogger(__name__)
 
@@ -141,3 +141,57 @@ def build(request, writer, native, *, draft_dir: Path | None = None) -> None:
         if failure is not None:
             raise error from failure
         raise
+
+
+def build_paired(request, writer, execution) -> None:
+    """Build an explicit Qwen3.5 DFlash pair, never a base-only replacement."""
+    execution.validate_local()
+
+    if execution.variant != "dflash" or tuple(x.role for x in execution.checkpoints) != ("draft",):
+        raise ValueError(
+            "Qwen3.5 paired execution requires variant=dflash and one draft checkpoint"
+        )
+    draft_dir = execution.checkpoints[0].model_dir
+    raw = json.loads((request.model_dir / "config.json").read_text())
+    draft = json.loads((draft_dir / "config.json").read_text())
+    if not candidate(request, raw):
+        raise ValueError("Qwen3.5 DFlash requires an admitted dense base request")
+    base = raw.get("text_config", raw)
+    if (base.get("hidden_size"), base.get("num_hidden_layers")) not in {(2560, 32), (4096, 32)}:
+        raise ValueError("Qwen3.5 DFlash is qualified only for the recorded 4B/9B base profiles")
+    if not isinstance(draft, dict) or draft.get("architectures") != ["DFlashDraftModel"]:
+        raise ValueError("Expected a DFlashDraftModel companion")
+    for name in ("hidden_size", "vocab_size"):
+        if type(draft.get(name)) is not int or draft[name] != base.get(name):
+            raise ValueError(f"Qwen3.5 DFlash base and draft disagree on {name}")
+    if draft.get("num_target_layers") != base.get("num_hidden_layers"):
+        raise ValueError("Qwen3.5 DFlash target layer count differs from base")
+    config = draft.get("dflash_config")
+    if not isinstance(config, dict) or config.get("block_size") != 16:
+        raise ValueError("Qwen3.5 DFlash currently maps the upstream linear block16 profile")
+    layers = config.get("target_layer_ids")
+    if (
+        not isinstance(layers, list)
+        or not layers
+        or any(type(i) is not int or not 0 <= i < base["num_hidden_layers"] for i in layers)
+        or len(set(layers)) != len(layers)
+    ):
+        raise ValueError("Invalid Qwen3.5 DFlash target layer IDs")
+    mask = config.get("mask_token_id")
+    if type(mask) is not int or not 0 <= mask < base["vocab_size"]:
+        raise ValueError("Invalid Qwen3.5 DFlash mask token")
+    capacity = draft.get("max_position_embeddings")
+    limit = request.max_sequence_length or min(base["max_position_embeddings"], 256)
+    if type(capacity) is not int or not 16 < limit <= capacity:
+        raise ValueError("Requested context exceeds DFlash draft capacity or block minimum")
+    if draft.get("quantization_config") or any(
+        (draft_dir / name).exists()
+        for name in ("hf_quant_config.json", "quantize_config.json", "quant_config.json")
+    ):
+        raise ValueError("This Qwen3.5 DFlash profile requires unquantized draft weights")
+
+    def native_pair(original_request, original_writer):
+        # Preserve the requested variant on fallback; native has no DFlash decoder.
+        raise NotImplementedError("Native Qwen3.5 does not implement the requested DFlash variant")
+
+    build(request, writer, native_pair, draft_dir=draft_dir)

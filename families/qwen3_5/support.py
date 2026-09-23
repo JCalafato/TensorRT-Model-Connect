@@ -10,6 +10,7 @@ _BASE = family_support(
     model_types=("qwen35", "qwen3.5", "qwen3_5"),
     tasks=("text_generation",),
     default_task="text_generation",
+    build_cli_module="edge_llm.cli",
 )
 
 

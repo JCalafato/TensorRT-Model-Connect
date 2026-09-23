@@ -26,10 +26,9 @@ variant is unsupported; it must never silently return an ordinary base bundle.
 Enable `TRTMC_ENABLE_EDGELLM=ON` and expose its native installation using
 `CMAKE_PREFIX_PATH`. The family checks the Edge pin, SM, CUDA, and TensorRT
 identity. Existing ordinary public build requests remain the entrypoint;
-paired requests use the existing `execution_variant="dflash"` and explicit
-draft-checkpoint input contract.
+paired requests use the family-owned CLI options shown below.
 
-`edge_llm.py` maps those requests into the pinned Python direct builder
+`edge_llm/builder.py` maps those requests into the pinned Python direct builder
 (`experimental.builder.cli`). These recorded FP16 profiles already passed that
 flow; they are not additional ONNX conversions. The family packages all required
 engine, tokenizer, chat-template, configuration, and external-weight files.
@@ -76,10 +75,12 @@ CPU-FP32 HF baseline rather than claiming a newly generated reference.
 
 ## Existing tests and replay gaps
 
-Only the existing `tests/test_e2e.py` diagnostic handling changes: save native
+The existing `tests/test_e2e.py` diagnostic handling changes: save native
 stdout/stderr, keep current evidence instrumentation, then enforce the return
 code and strict JSON parsing. No quality threshold, fixture, timeout, or
-comparison is weakened. No new test driver or test framework is published.
+comparison is weakened. The existing precision-contract tests also cover the family-owned build options,
+request identity, and paired-publication failure behavior. No new test driver or
+test framework is published.
 
 The current owning manifests cover 0.8B/2B/4B/9B, not their Base variants or
 DFlash pairs. Manifest presence is not a fresh-head model pass. The existing
@@ -91,3 +92,34 @@ rebuilding locally. CPU/source checks, native compilation, and generic CLI
 checks do not replace that work or qualify unlisted models. No independent
 logit-bias coverage is claimed from an upstream fixture that repeats the
 basic workload.
+
+## Family-owned build options
+
+The generic CLI loads this family's `edge_llm.cli` hook only after resolving
+the model. The shared build API has no execution-mode or companion arguments.
+All variant validation and builder selection remain in this family.
+
+```sh
+trtmc build /path/to/target --family qwen3_5 --precision fp16 \
+  --execution-variant dflash --companion draft=/path/to/draft \
+  -o model.bundle
+```
+
+Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+shows these family options using local metadata; remote-ID help does not download
+a checkpoint. For Python callers, use this family's request extension:
+
+```python
+from tensorrt_model_connect import build
+from families.qwen3_5.edge_llm.config import (
+    BuildExecutionInputs, NamedCheckpoint, with_execution,
+)
+
+# request is an ordinary BuildRequest owned by this family; draft_path is a Path.
+build(with_execution(request, BuildExecutionInputs(
+    "dflash", (NamedCheckpoint("draft", draft_path),),
+)))
+```
+
+A failed explicit pair is never replaced by a base-only bundle. Previously
+recorded full-model results above are historical, not fresh refactor-head E2Es.
