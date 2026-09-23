@@ -103,6 +103,11 @@ and mechanics described in the
 
 ### Optional InternVL Edge execution
 
+Use `trtmc internvl build MODEL -o model.bundle` with the owning
+family\u0027s options. `trtmc internvl build --help` works offline without
+a checkpoint or GPU imports. This uses the existing
+[family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
+
 The InternVL family can offload the recorded original-source InternVL3
 1B/2B/8B HF configurations on native x86 SM80 and 14B on native x86 SM120 to the
 pinned Edge-LLM 0.10.1 SDK. These FP16, batch-one, TP-one profiles have historical

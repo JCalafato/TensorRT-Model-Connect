@@ -40,7 +40,7 @@ _DEFAULT_FIXED_IMAGE_SIZE = 448
 
 
 if TYPE_CHECKING:
-    from tensorrt_model_connect.build import BuildRequest
+    from .build_request import BuildRequest
     from tensorrt_model_connect.bundle_writer import BundleWriter
 
 
@@ -393,6 +393,9 @@ def _tokenizer_runtime_contract(model_dir: Path) -> dict[str, object]:
 
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Select complete-network offload or preserve the native InternVL builder."""
+    from .build_request import coerce_request
+
+    request = coerce_request(request)
     from .edge_llm.dispatch import build as dispatch_build
 
     def _build_native(request: "BuildRequest", writer: "BundleWriter") -> None:
