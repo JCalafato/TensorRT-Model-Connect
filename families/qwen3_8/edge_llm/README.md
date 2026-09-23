@@ -9,14 +9,13 @@ Edge only for an explicit mixed-NVFP4 target plus DSpark companion.
 
 Provision the optional native SDK with `TRTMC_EDGELLM_ALL_KERNELS=ON` and
 `TRTMC_EDGELLM_ONNX=ON` using the
-[pinned package instructions](../../cmake/edgellm/README.md). The source is
+[pinned package instructions](../../../cmake/edge_llm/README.md). The source is
 GitHub Edge-LLM 0.10.1 at `e8b29522938901f6df19ebeedd4b69bc8edbcd97`.
 Configure `CMAKE_PREFIX_PATH` for the installed package and compile the runtime
 with `TRTMC_ENABLE_EDGELLM=ON`. Cross compilation is unsupported.
 
 The Python build API accepts `BuildExecutionInputs(variant="dspark",
-checkpoints=(NamedCheckpoint("draft", draft_path),))` through its `execution`
-argument. The CLI equivalent adds `--execution-variant dspark` and
+checkpoints=(NamedCheckpoint("draft", draft_path),))` on a family-owned typed request. The CLI equivalent adds `--execution-variant dspark` and
 `--companion draft=/path/to/draft` to an ordinary build invocation.
 The family invokes the original Edge Python ONNX exporter and native
 `edgellm-onnx-build`; it does not alter source tensors or pad safetensors headers.
@@ -58,3 +57,34 @@ A first inference attempt exposed incompatible development JSON headers sharing
 Edge’s 3.12.0 version label. Matching the exact pinned headers fixed the crash
 without changing Edge or the engines. The generic SDK now checks header content
 rather than relying only on the version label.
+
+## Family-owned build options
+
+The generic CLI loads this family's `edge_llm.cli` hook only after resolving
+the model. The shared build API has no execution-mode or companion arguments.
+All variant validation and builder selection remain in this family.
+
+```sh
+trtmc build /path/to/target --family qwen3_8 --precision fp16 \
+  --execution-variant dspark --companion draft=/path/to/draft \
+  -o model.bundle
+```
+
+Put MODEL immediately after `build`. `trtmc build /path/to/target --help`
+shows these family options using local metadata; remote-ID help does not download
+a checkpoint. For Python callers, use this family's request extension:
+
+```python
+from tensorrt_model_connect import build
+from families.qwen3_8.edge_llm.config import (
+    BuildExecutionInputs, NamedCheckpoint, with_execution,
+)
+
+# request is an ordinary BuildRequest owned by this family; draft_path is a Path.
+build(with_execution(request, BuildExecutionInputs(
+    "dspark", (NamedCheckpoint("draft", draft_path),),
+)))
+```
+
+A failed explicit pair is never replaced by a base-only bundle. Previously
+recorded full-model results above are historical, not fresh refactor-head E2Es.
