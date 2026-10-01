@@ -150,7 +150,7 @@ def test_edge_cli_help_is_family_owned(tmp_path, capsys):
 def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     from families.qwen3_5.edge_llm import cli
     from dataclasses import fields, replace
-    from tensorrt_model_connect.build import BuildRequest
+    from families.qwen3_5.build_request import BuildRequest, coerce_request
     from families.qwen3_5.edge_llm.config import (
         BuildExecutionInputs, NamedCheckpoint, with_execution,
     )
@@ -158,6 +158,7 @@ def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     source, draft = _edge_cli_source(tmp_path)
     request = BuildRequest(source, tmp_path / "out", "qwen3_5", "text_generation", "fp16",
                            graph_transform=lambda layer: layer)
+    assert coerce_request(request) is request
     execution = BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft),))
     assert cli.execution_inputs(None) is None
     extended = with_execution(request, execution)
