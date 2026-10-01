@@ -80,7 +80,8 @@ def _edge_cli_source(tmp_path):
     return source, draft
 
 
-def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
+@pytest.mark.parametrize("precision", [None, "fp16", "fp32", "bf16"])
+def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision):
     from tensorrt_model_connect import family_cli as build_cli
     from families.qwen3_5.edge_llm import dispatch
     from families.qwen3_5.edge_llm.config import Qwen35BuildRequest
@@ -92,6 +93,7 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
     def paired(request, writer, execution):
         assert isinstance(request, Qwen35BuildRequest)
         assert request.execution is execution
+        assert request.precision == ("fp16" if precision is None else precision)
         assert execution.variant == "dflash"
         assert [(item.role, item.model_dir) for item in execution.checkpoints] == [("draft", draft)]
         seen.append(request)
@@ -99,10 +101,18 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(dispatch, "build_paired", paired)
-    assert build_cli.main(["qwen3_5",
-        "build", str(source), "--precision", "fp16", "-o", str(output),
+    precision_args = [] if precision is None else ["--precision", precision]
+    arguments = ["qwen3_5",
+        "build", str(source), *precision_args, "-o", str(output),
         "--execution-variant", "dflash", "--companion", f"draft={draft}",
-    ]) == 0
+    ]
+    if precision == "bf16":
+        with pytest.raises(SystemExit) as error:
+            build_cli.main(arguments)
+        assert error.value.code == 2
+        assert not seen and not output.exists()
+        return
+    assert build_cli.main(arguments) == 0
     assert len(seen) == 1
     assert output.is_file()
 
