@@ -50,7 +50,7 @@
             "fp16",
             "bf16"
           ],
-          "default": "fp32"
+          "help": "Build precision (default: fp16 for paired execution, fp32 otherwise)"
         },
         {
           "name": "backend",

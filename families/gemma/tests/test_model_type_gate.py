@@ -205,7 +205,10 @@ def test_untyped_execution_fails_before_side_effects(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("variant", ["mtp", "dspark"])
-def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkeypatch, variant):
+@pytest.mark.parametrize("precision", [None, "fp16", "fp32", "bf16"])
+def test_edge_cli_routes_through_the_ordinary_family_entrypoint(
+    tmp_path, monkeypatch, variant, precision
+):
     from families.gemma.edge_llm import builder as edge_builder
     from tensorrt_model_connect import family_cli as build_cli
 
@@ -218,13 +221,15 @@ def test_edge_cli_routes_through_the_ordinary_family_entrypoint(tmp_path, monkey
     def paired(request, writer, execution):
         assert isinstance(request, GemmaBuildRequest)
         assert request.execution is execution
+        assert request.precision == ("fp16" if precision is None else precision)
         seen.append(execution)
         writer.set_header(family="gemma", task=request.task, backend=request.backend)
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(edge_builder, "build", paired)
+    precision_args = [] if precision is None else ["--precision", precision]
     assert build_cli.main(["gemma",
-        "build", str(source), "--precision", "fp16",
+        "build", str(source), *precision_args,
         "-o", str(output), "--execution-variant", variant,
         "--companion", f"draft={draft}",
     ]) == 0
