@@ -1086,8 +1086,14 @@ def test_community_premerge_has_independent_lanes_and_public_only_execution():
     assert "sleep" not in step["run"]
     gpu = executor["jobs"]["provision-and-test"]
     test = next(step for step in gpu["steps"] if step.get("id") == "test")
-    assert "HF_TOKEN" not in test["env"]
-    assert "HF_TOKEN" not in test["run"]
+    assert test["env"]["HF_TOKEN"] == "${{ secrets.HF_TOKEN }}"
+    assert """printf '%s' "$HF_TOKEN" > "$checkpoint_token" """.strip() in test["run"]
+    assert "unset HF_TOKEN" in test["run"]
+    assert """trap 'rm -f "$checkpoint_token"' EXIT""" in test["run"]
+    assert "install -d -m 0700 $remote_auth" in test["run"]
+    assert 'retry brev copy "$checkpoint_token" "$INSTANCE_NAME:$remote_auth/token"' in test["run"]
+    assert '--checkpoint-token-file "$remote_auth/token"' in test["run"]
+    assert "HF_TOKEN=" not in test["run"]
     assert "git show $CI_SHA:tools/community_gpu_ci.py" in test["run"]
     assert "git fetch --depth 2 origin $MERGE_SHA" in test["run"]
     assert "huggingface-hub==0.36.0" in test["run"]
