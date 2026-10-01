@@ -110,6 +110,18 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
     assert len(seen) == 1
     assert output.is_file()
 
+    from families.nemotron_h.tests.test_e2e import _build_bundle
+    from families.nemotron_h.edge_llm.config import BuildExecutionInputs, NamedCheckpoint
+
+    _build_bundle(
+        {"precision": "fp16", "max_sequence_length": 64, "tensor_parallel_size": 1},
+        source, output,
+        execution=BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft),)),
+    )
+    assert len(seen) == 2
+    assert seen[-1].max_sequence_length == 64
+    assert output.is_file()
+
 
 @pytest.mark.parametrize("options", [
     ["--companion", "draft=/missing"],
@@ -316,6 +328,21 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
     assert captured[0].task == "text_generation"
     assert captured[0].precision == ("fp16" if options else "fp32")
     assert not output.exists()
+
+    from families.nemotron_h.tests import test_e2e as e2e
+
+    def capture_bundle(request):
+        captured.append(request)
+        request.output_path.write_bytes(b"test bundle")
+
+    monkeypatch.setattr(e2e, "build", capture_bundle)
+    e2e._build_bundle(
+        {"precision": captured[1].precision,
+         "max_sequence_length": captured[1].max_sequence_length,
+         "tensor_parallel_size": captured[1].tensor_parallel_size},
+        source, output,
+    )
+    assert captured[-1] == captured[1]
 
 
 def test_declared_help_is_offline_and_dependency_free():

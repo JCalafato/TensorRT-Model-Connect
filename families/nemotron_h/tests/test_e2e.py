@@ -138,20 +138,22 @@ def _build_bundle(manifest: dict, model_dir: Path, bundle: Path, *, execution=No
     quantization = manifest.get("quantization")
     assert quantization is None or isinstance(quantization, str)
     fp32_layers = tuple(manifest.get("fp32_layers", ()))
-    build(
-        BuildRequest(
-            model_dir=model_dir,
-            output_path=bundle,
-            family=_FAMILY,
-            task="text_generation",
-            precision=manifest["precision"],
-            max_sequence_length=manifest["max_sequence_length"],
-            tensor_parallel_size=manifest["tensor_parallel_size"],
-            quantization=quantization,
-            fp32_layers=fp32_layers,
-        ),
-        execution=execution,
+    request = BuildRequest(
+        model_dir=model_dir,
+        output_path=bundle,
+        family=_FAMILY,
+        task="text_generation",
+        precision=manifest["precision"],
+        max_sequence_length=manifest["max_sequence_length"],
+        tensor_parallel_size=manifest["tensor_parallel_size"],
+        quantization=quantization,
+        fp32_layers=fp32_layers,
     )
+    if execution is not None:
+        from families.nemotron_h.edge_llm.config import with_execution
+
+        request = with_execution(request, execution)
+    build(request)
     assert bundle.is_file() and bundle.stat().st_size > 0, bundle
 
 
