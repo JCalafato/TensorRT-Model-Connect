@@ -61,6 +61,18 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
     assert len(seen) == 1
     assert output.is_file()
 
+    from families.qwen3_8.tests.test_e2e import _build_bundle
+    from families.qwen3_8.edge_llm.config import BuildExecutionInputs, NamedCheckpoint
+
+    _build_bundle(
+        {"precision": "fp16", "max_sequence_length": 64, "tensor_parallel_size": 1},
+        source, output,
+        execution=BuildExecutionInputs("dspark", (NamedCheckpoint("draft", draft),)),
+    )
+    assert len(seen) == 2
+    assert seen[-1].max_sequence_length == 64
+    assert output.is_file()
+
 
 @pytest.mark.parametrize("options", [
     ["--companion", "draft=/missing"],
@@ -295,6 +307,21 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
     assert captured[0].task == "text_generation"
     assert captured[0].precision == ("fp16" if options else "bf16")
     assert not output.exists()
+
+    from families.qwen3_8.tests.test_e2e import _build_bundle
+
+    def capture_bundle(request, destination):
+        captured.append(request)
+        destination.write_bytes(b"test bundle")
+
+    monkeypatch.setattr(owner, "build_bundle", capture_bundle)
+    _build_bundle(
+        {"precision": captured[0].precision,
+         "max_sequence_length": captured[0].max_sequence_length,
+         "tensor_parallel_size": captured[0].tensor_parallel_size},
+        source, output,
+    )
+    assert captured[-1] == captured[0]
 
 
 def test_declared_help_is_offline_and_dependency_free():

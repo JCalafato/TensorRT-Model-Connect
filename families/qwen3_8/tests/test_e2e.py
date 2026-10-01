@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from tensorrt_model_connect import BuildRequest, build
+from families.qwen3_8.cli import build
 
 
 _TEST_DIR = Path(__file__).resolve().parent
@@ -139,18 +139,18 @@ def _build_bundle(manifest: dict, model_dir: Path, bundle: Path, *, execution=No
     assert quantization is None or isinstance(quantization, str)
     fp32_layers = tuple(manifest.get("fp32_layers", ()))
     build(
-        BuildRequest(
-            model_dir=model_dir,
-            output_path=bundle,
-            family=_FAMILY,
-            task="text_generation",
-            precision=manifest["precision"],
-            max_sequence_length=manifest["max_sequence_length"],
-            tensor_parallel_size=manifest["tensor_parallel_size"],
-            quantization=quantization,
-            fp32_layers=fp32_layers,
-        ),
-        execution=execution,
+        model=str(model_dir),
+        output=bundle,
+        task="text_generation",
+        precision=manifest["precision"],
+        max_sequence_length=manifest["max_sequence_length"],
+        tensor_parallel_size=manifest["tensor_parallel_size"],
+        quantization=quantization,
+        fp32_layers=fp32_layers,
+        execution_variant=execution.variant if execution is not None else None,
+        companion=tuple(
+            f"{checkpoint.role}={checkpoint.model_dir}" for checkpoint in execution.checkpoints
+        ) if execution is not None else (),
     )
     assert bundle.is_file() and bundle.stat().st_size > 0, bundle
 
