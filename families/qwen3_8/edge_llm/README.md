@@ -91,8 +91,10 @@ A failed explicit pair is never replaced by a base-only bundle. Previously
 recorded full-model results above are historical, not fresh refactor-head E2Es.
 
 Request controls and the existing 9–1024 capacity range are checked before any
-Edge preparation. The native precision default is not changed: this paired
-profile explicitly requires FP16. Temporary staging uses the output filesystem.
+Edge preparation. When CLI precision is omitted, paired execution defaults to
+FP16 while ordinary native builds retain BF16. Explicit precision values are
+unchanged; this paired profile accepts only FP16. Temporary staging uses the
+output filesystem.
 
 ## Declared build command
 

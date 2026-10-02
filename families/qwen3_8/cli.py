@@ -36,7 +36,7 @@ def build_bundle(request: BuildRequest, output: Path) -> None:
 
 def build(
     *, model: str, output: Path, revision: str | None = None,
-    task: str = "text_generation", precision: str = "bf16", backend: str = "trt",
+    task: str = "text_generation", precision: str | None = None, backend: str = "trt",
     max_sequence_length: int | None = None, tensor_parallel_size: int = 1,
     verbose: bool = False,
     fp32_layers: list[int] | tuple[int, ...] = (),
@@ -45,6 +45,8 @@ def build(
 ) -> int:
     """Run the declared owner command; help never imports this handler."""
     execution = execution_inputs(execution_variant, companion)
+    if precision is None:
+        precision = "fp16" if execution is not None else "bf16"
     model_dir = resolve_model(model, revision)
     resolve_family(load_model_metadata(model_dir), "qwen3_8")
     request = BuildRequest(

@@ -221,6 +221,12 @@ class EdgeTask final : public ITextGeneration {
             throw std::runtime_error("Qwen3.8 Edge returned invalid prompt counts");
         validate_capacity(counts.front(), input_limit_, capacity_, request.maxGenerateLength);
         trt_edgellm::rt::LLMGenerationResponse response{};
+        // Complete queued work before response/request storage is destroyed,
+        // including exception paths in a persistent task.
+        struct Drain {
+            cudaStream_t stream;
+            ~Drain() { cudaStreamSynchronize(stream); }
+        } drain{stream_.get()};
         if (!runtime_->handleRequest(request, response, stream_.get()) ||
             response.outputIds.size() != 1 || response.outputTexts.size() != 1 ||
             response.outputIds.front().empty() ||
