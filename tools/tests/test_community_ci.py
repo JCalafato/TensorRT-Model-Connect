@@ -821,16 +821,33 @@ def test_gpu_status_and_cleanup_fail_closed() -> None:
     assert "${{" not in result["run"]
     cleanup = steps["Always tear down the GPU instance"]
     assert cleanup["if"] == "${{ always() && steps.reserve.outputs.instance_name != '' }}"
-    assert cleanup["env"] == {"INSTANCE_NAME": "${{ steps.reserve.outputs.instance_name }}"}
+    assert cleanup["env"] == {
+        "INSTANCE_NAME": "${{ steps.test.outputs.instance_name || steps.reserve.outputs.instance_name }}"
+    }
+    assert 'echo "instance_name=$INSTANCE_NAME" >> "$GITHUB_OUTPUT"' in test_step["run"]
     assert cleanup["run"] == 'brev delete "$INSTANCE_NAME" || true'
     assert job["outputs"] == {"conclusion": "${{ steps.result.outputs.conclusion }}"}
     cleanup_job = workflow["jobs"]["cleanup"]
     assert "always()" in cleanup_job["if"]
     assert "needs.gpu-authorize.outputs.run_gpu == 'true'" in cleanup_job["if"]
     cleanup_steps = {step["name"]: step for step in cleanup_job["steps"]}
-    assert cleanup_steps["Delete the deterministic GPU instance"]["run"] == (
-        'brev delete "trtmc-gpu-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true'
+    cleanup_script = cleanup_steps["Delete the deterministic GPU instance"]["run"]
+    cleanup_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'brev() { printf "%s\\n" "$*"; return 1; }\n' + cleanup_script,
+        ],
+        env={**os.environ, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2"},
+        capture_output=True,
+        text=True,
     )
+    assert cleanup_result.returncode == 0, cleanup_result.stderr
+    assert cleanup_result.stdout.splitlines() == [
+        "delete trtmc-gpu-ci-123-2",
+        "delete trtmc-gpu-ci-123-2-r2",
+        "delete trtmc-gpu-ci-123-2-r3",
+    ]
     publish = workflow["jobs"]["publish"]["steps"][0]
     assert publish["env"]["CPU_RESULT"] == "${{ needs.required.result }}"
     assert publish["env"]["GPU_RESULT"] == "${{ needs.provision-and-test.result }}"
