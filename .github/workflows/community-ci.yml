@@ -925,11 +925,24 @@ jobs:
           set -euo pipefail
           # Never place the token in remote command arguments or build context.
           # Brev exec consumes stdin as instance names, so use its file transport.
+          checkpoint_instance=""
+          remote_auth="/tmp/trtmc-checkpoint-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_checkpoint_token() {
+            if [ -n "$checkpoint_instance" ]; then
+              # Keep cleanup bounded if SSH fails. VM teardown remains the
+              # fallback, including when a partial copy preceded a failure.
+              if timeout 30s brev exec "$checkpoint_instance" \
+                "rm -f -- '$remote_auth/token' && rmdir -- '$remote_auth'"; then
+                checkpoint_instance=""
+              else
+                echo "::warning::Could not remove the checkpoint token from $checkpoint_instance; VM teardown is still required." >&2
+              fi
+            fi
+          }
           checkpoint_token=$(mktemp "$RUNNER_TEMP/trtmc-checkpoint-token.XXXXXX")
-          trap 'rm -f "$checkpoint_token"' EXIT
+          trap 'rm -f "$checkpoint_token"; cleanup_checkpoint_token' EXIT
           printf '%s' "$HF_TOKEN" > "$checkpoint_token"
           unset HF_TOKEN
-          remote_auth="/tmp/trtmc-checkpoint-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           # A dropped SSH session to the Brev host (transient network flake,
           # not the vpc.pool.count quota issue) otherwise fails the whole job
           # on any single blip. Retry each remote step a few times instead.
@@ -1049,6 +1062,7 @@ jobs:
             # The trusted coordinator consumes and unlinks the token before any
             # contributor container starts; VM teardown also covers failed copies.
             retry brev exec "$INSTANCE_NAME" "install -d -m 0700 $remote_auth" || return 1
+            checkpoint_instance="$INSTANCE_NAME"
             retry brev copy "$checkpoint_token" "$INSTANCE_NAME:$remote_auth/token" || return 1
 
             # Each selected family gets a fresh container on this one VM. The
@@ -1076,8 +1090,12 @@ jobs:
           INSTANCE_PROVIDER_AWS=false
           while true; do
             if run_on_instance; then
+              cleanup_checkpoint_token
               break
             fi
+            # Attempt file removal before deleting or replacing this VM, even
+            # if copy/launch failed before the coordinator could consume it.
+            cleanup_checkpoint_token
             if [ "$instance_attempt" -ge "$max_instance_attempts" ]; then
               echo "::error::GPU instance unusable after $max_instance_attempts attempts (including re-creation)"
               exit 1
