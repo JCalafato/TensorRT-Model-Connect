@@ -84,7 +84,8 @@ def _edge_cli_source(tmp_path):
     return source, draft
 
 
-def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
+@pytest.mark.parametrize("precision", [None, "fp16", "fp32"])
+def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision):
     from tensorrt_model_connect import family_cli as build_cli
     from families.nemotron_h.edge_llm import dispatch
     from families.nemotron_h.edge_llm.config import NemotronHBuildRequest
@@ -103,11 +104,13 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(dispatch, "build_paired", paired)
+    options = ["--precision", precision] if precision else []
     assert build_cli.main(["nemotron_h",
-        "build", str(source), "--precision", "fp16", "-o", str(output),
+        "build", str(source), *options, "-o", str(output),
         "--execution-variant", "dflash", "--companion", f"draft={draft}",
     ]) == 0
     assert len(seen) == 1
+    assert seen[0].precision == (precision or "fp16")
     assert output.is_file()
 
     from families.nemotron_h.tests.test_e2e import _build_bundle
@@ -119,6 +122,7 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
         execution=BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft),)),
     )
     assert len(seen) == 2
+    assert seen[-1].precision == "fp16"
     assert seen[-1].max_sequence_length == 64
     assert output.is_file()
 
@@ -156,7 +160,7 @@ def test_edge_cli_help_is_family_owned(tmp_path, capsys):
 def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     from families.nemotron_h.edge_llm import cli
     from dataclasses import fields, replace
-    from tensorrt_model_connect.build import BuildRequest
+    from families.nemotron_h.build_request import BuildRequest, coerce_request
     from families.nemotron_h.edge_llm.config import (
         BuildExecutionInputs, NamedCheckpoint, with_execution,
     )
@@ -164,6 +168,7 @@ def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     source, draft = _edge_cli_source(tmp_path)
     request = BuildRequest(source, tmp_path / "out", "nemotron_h", "text_generation", "fp16",
                            graph_transform=lambda layer: layer)
+    assert coerce_request(request) is request
     execution = BuildExecutionInputs("dflash", (NamedCheckpoint("draft", draft),))
     assert cli.execution_inputs(None) is None
     extended = with_execution(request, execution)

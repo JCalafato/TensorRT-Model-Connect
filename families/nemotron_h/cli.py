@@ -36,15 +36,17 @@ def build_bundle(request: BuildRequest, output: Path) -> None:
 
 def build(
     *, model: str, output: Path, revision: str | None = None,
-    task: str = "text_generation", precision: str = "fp32", backend: str = "trt",
+    task: str = "text_generation", precision: str | None = None, backend: str = "trt",
     max_sequence_length: int | None = None, tensor_parallel_size: int = 1,
     verbose: bool = False,
     execution_variant: str | None = None, companion: list[str] | tuple[str, ...] = (),
 ) -> int:
     """Run the declared owner command; help never imports this handler."""
+    execution = execution_inputs(execution_variant, companion)
+    if precision is None:
+        precision = "fp16" if execution is not None else "fp32"
     if precision not in {"fp32", "fp16"}:
         raise ValueError("Nemotron-H precision must be fp32 or fp16")
-    execution = execution_inputs(execution_variant, companion)
     model_dir = resolve_model(model, revision)
     resolve_family(load_model_metadata(model_dir), "nemotron_h")
     request = BuildRequest(

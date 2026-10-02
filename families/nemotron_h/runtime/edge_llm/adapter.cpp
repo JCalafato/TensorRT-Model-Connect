@@ -264,10 +264,10 @@ class EdgeTask final : public ITextGeneration {
         if (count > static_cast<std::size_t>(input_limit_))
             throw std::invalid_argument("Nemotron-H Edge input exceeds bundle capacity");
         std::lock_guard<std::mutex> lock(mutex_);
-        RequestDrain drain(stream_.get());
         validate_capacity(static_cast<int>(count), input_limit_, capacity_,
                           request.maxGenerateLength);
         trt_edgellm::rt::LLMGenerationResponse response{};
+        RequestDrain drain(stream_.get());
         if (!runtime_.handleRequest(request, response, stream_.get()))
             throw std::runtime_error("Nemotron-H Edge generation failed");
         drain.checked();
