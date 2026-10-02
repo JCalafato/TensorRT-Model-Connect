@@ -156,7 +156,8 @@ def _edge_cli_source(tmp_path):
     return source, draft
 
 
-def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
+@pytest.mark.parametrize("precision", [None, "fp16", "fp32", "bf16"])
+def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision):
     from tensorrt_model_connect import family_cli as build_cli
     from families.llama.edge_llm import dispatch
     from families.llama.edge_llm.config import LlamaBuildRequest
@@ -175,11 +176,13 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch):
         writer.add_json("edge-test.json", {"variant": execution.variant})
 
     monkeypatch.setattr(dispatch, "build_paired", paired)
+    options = ["--precision", precision] if precision else []
     assert build_cli.main(["llama",
-        "build", str(source), "--precision", "fp16", "-o", str(output),
+        "build", str(source), *options, "-o", str(output),
         "--execution-variant", "eagle3", "--companion", f"draft={draft}",
     ]) == 0
     assert len(seen) == 1
+    assert seen[0].precision == (precision or "fp16")
     assert output.is_file()
 
 
@@ -216,7 +219,7 @@ def test_edge_cli_help_is_family_owned(tmp_path, capsys):
 def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     from families.llama.edge_llm import cli
     from dataclasses import fields, replace
-    from tensorrt_model_connect.build import BuildRequest
+    from families.llama.build_request import BuildRequest, coerce_request
     from families.llama.edge_llm.config import (
         BuildExecutionInputs, NamedCheckpoint, with_execution,
     )
@@ -224,6 +227,7 @@ def test_edge_request_preserves_fields_and_family_owner(tmp_path):
     source, draft = _edge_cli_source(tmp_path)
     request = BuildRequest(source, tmp_path / "out", "llama", "text_generation", "fp16",
                            graph_transform=lambda layer: layer)
+    assert coerce_request(request) is request
     execution = BuildExecutionInputs("eagle3", (NamedCheckpoint("draft", draft),))
     assert cli.execution_inputs(None) is None
     extended = with_execution(request, execution)
@@ -273,6 +277,13 @@ def test_edge_pair_requires_draft_and_rechecks_local_inputs(tmp_path):
     draft.rmdir()
     with pytest.raises(ValueError, match="existing local directory"):
         build_paired(request, None, execution)
+
+    import json
+    draft.mkdir()
+    for invalid_base in ([], None, 7):
+        (source / "config.json").write_text(json.dumps(invalid_base))
+        with pytest.raises(ValueError, match="base config.json must contain an object"):
+            build_paired(request, None, execution)
 
 
 @pytest.mark.parametrize("mode", ["absent", "success", "corrupt", "failure", "cancel", "device_failure"])
@@ -405,7 +416,8 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
     assert not output.exists()
 
 
-def test_declared_help_is_offline_and_dependency_free():
+@pytest.mark.parametrize("command", ["build", "build-speculative"])
+def test_declared_help_is_offline_and_dependency_free(command):
     """Actual child-process help needs neither a checkpoint nor GPU imports."""
     import subprocess
     import sys
@@ -414,14 +426,15 @@ def test_declared_help_is_offline_and_dependency_free():
 import sys
 from tensorrt_model_connect.family_cli import main
 try:
-    main(["llama", "build", "--help"])
+    main(["llama", sys.argv[1], "--help"])
 except SystemExit as error:
     assert error.code == 0
 else:
     raise AssertionError("help did not exit")
 assert "families.llama.cli" not in sys.modules
+assert "families.llama.speculative.build" not in sys.modules
 assert "tensorrt" not in sys.modules
 assert "huggingface_hub" not in sys.modules
 """
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
-    assert "trtmc llama build" in result.stdout
+    result = subprocess.run([sys.executable, "-c", code, command], capture_output=True, text=True, check=True)
+    assert f"trtmc llama {command}" in result.stdout

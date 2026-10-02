@@ -163,6 +163,8 @@ def build_paired(request, writer, execution) -> None:
         raise ValueError("Llama paired execution requires variant=eagle3 and one draft checkpoint")
     draft_dir = execution.checkpoints[0].model_dir
     base = json.loads((request.model_dir / "config.json").read_text())
+    if not isinstance(base, dict):
+        raise ValueError("Llama base config.json must contain an object")
     draft = json.loads((draft_dir / "config.json").read_text())
     if not candidate(request, base):
         raise ValueError("Llama EAGLE3 requires an admitted dense base request")
@@ -199,6 +201,9 @@ def build_paired(request, writer, execution) -> None:
 
     def native_pair(original_request, original_writer):
         # Never turn a failed explicit pair into an ordinary base-only bundle.
-        raise ValueError("Native Llama does not implement EAGLE3; use the qualified Edge route on Linux x86_64 SM120 with FP16 weights")
+        raise ValueError(
+            "This Edge EAGLE3 profile requires Linux x86_64 SM120 with FP16 weights; "
+            "the separate native build-speculative profile is not an automatic fallback"
+        )
 
     build(request, writer, native_pair, draft_dir=draft_dir)

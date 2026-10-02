@@ -62,8 +62,10 @@ Use explicit capacity 2048 for the recorded pair. Geometry, source precision
 and the draft context limit are checked before construction. The pinned builder
 receives `--spec-type eagle3`; the bundle contains both engines and checkpoints.
 Pinned drafting defaults are top-k 10, six steps and verification size 60.
-A failed explicit pair never becomes a base-only deployment: the warned native
-fallback reports that native EAGLE3 execution is unsupported.
+A failed explicit pair never becomes a base-only deployment. The separate
+`trtmc llama build-speculative` native EAGLE3 prototype remains available with
+its own profile and controls; it is not an automatic replacement for this Edge
+profile. See [native speculative decoding](../SPECULATIVE_DECODING.md).
 
 ## Recorded model qualification
 
@@ -111,6 +113,9 @@ trtmc llama build /path/to/target --precision fp16 \
   --execution-variant eagle3 --companion draft=/path/to/draft \
   -o model.bundle
 ```
+
+Omitted CLI precision defaults to FP16 for this paired profile; ordinary builds
+retain FP32 and explicit precision values are unchanged.
 
 Options may precede or follow MODEL. `trtmc llama build /path/to/target --help`
 shows these family options using local metadata; remote-ID help does not download
