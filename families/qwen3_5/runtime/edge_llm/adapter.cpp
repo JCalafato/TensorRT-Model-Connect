@@ -347,11 +347,11 @@ ITask* create(const BundleReader& bundle) {
     const auto variant = marker.value("execution_variant", "autoregressive");
     const auto task = marker.value("task", "text_generation");
     const auto& bundle_task = bundle.info().task;
-    if (bundle_task != task && !(task == "vision_language_generation" &&
-                                 bundle_task == api::IImagesTextToText::kTask))
+    if (bundle_task != task &&
+        !(task == "vision_language_generation" && bundle_task == api::IImagesTextToText::kTask))
         throw std::runtime_error("Qwen3.5 Edge bundle task differs from its execution contract");
-    if ((variant != "autoregressive" && variant != "dflash" &&
-         variant != "dflash_ddtree" && variant != "mtp") ||
+    if ((variant != "autoregressive" && variant != "dflash" && variant != "dflash_ddtree" &&
+         variant != "mtp") ||
         ((variant == "dflash" || variant == "dflash_ddtree") &&
          marker.at("dflash_block_size") != 16) ||
         (variant == "mtp" &&
