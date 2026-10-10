@@ -186,6 +186,14 @@ def _native_arguments(bundle: Path, runtime_root: Path, prompt: str, case: dict)
         "--max-new-tokens",
         str(case["max_new_tokens"]),
     ]
+    if "image" in case and "images" in case:
+        raise ValueError("Specify image or ordered images, not both")
+    if "images" in case:
+        if not case["images"]:
+            raise ValueError("Ordered images cannot be empty")
+        arguments.extend(["--images", json.dumps(case["images"])])
+    elif "image" in case:
+        arguments.extend(["--image", str(case["image"])])
     options = {
         "temperature": "--temperature",
         "top_k": "--top-k",
@@ -330,6 +338,58 @@ def _record_text_diagnostics(native_ids: list[int], reference_ids: list[int]) ->
     })
 
 
+def _reference_inputs(model_dir: Path, manifest: dict, tokenizer, prompt: str, case: dict):
+    """Validate processor dependencies and media before loading large source weights."""
+    if "image" in case or "images" in case:
+        from PIL import Image
+        from transformers import AutoProcessor
+        assert case.get("use_chat_template", True), "Image requests require the source chat template"
+        processor = AutoProcessor.from_pretrained(
+            model_dir, local_files_only=True, trust_remote_code=bool(manifest.get("trust_remote_code", False)),
+        )
+        # Match the owning visual profile, using the source patch and merge sizes.
+        factor = processor.image_processor.patch_size * processor.image_processor.merge_size
+        processor.image_processor.size = {
+            "shortest_edge": 128 * factor * factor,
+            "longest_edge": 1280 * factor * factor,
+        }
+        if "image" in case and "images" in case:
+            raise ValueError("Specify image or ordered images, not both")
+        paths = case["images"] if "images" in case else [case["image"]]
+        if not paths:
+            raise ValueError("Ordered images cannot be empty")
+        messages = [{"role": "user", "content": [
+            *({"type": "image"} for _ in paths), {"type": "text", "text": prompt},
+        ]}]
+        # Base checkpoints may embed their provider template only in tokenizer_config.json.
+        rendered = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+            chat_template=processor.chat_template or tokenizer.chat_template,
+            enable_thinking=case.get("enable_thinking", False),
+        )
+        images = []
+        for path in paths:
+            with Image.open(path) as image:
+                images.append(image.convert("RGB"))
+        try:
+            inputs = processor(
+                text=[rendered], images=images, return_tensors="pt",
+                # Serialized tokenizer defaults take precedence over processor.size.
+                images_kwargs={
+                    "min_pixels": processor.image_processor.size["shortest_edge"],
+                    "max_pixels": processor.image_processor.size["longest_edge"],
+                },
+            )
+        finally:
+            for image in images:
+                image.close()
+        record_evidence("inputs", {"images": list(map(str, paths)),
+                                  "image_grid_thw": inputs["image_grid_thw"].tolist()})
+    else:
+        inputs = _render_prompt(tokenizer, prompt, case)
+    return inputs
+
+
 def _hf_reference(
     model_dir: Path,
     manifest: dict,
@@ -356,17 +416,30 @@ def _hf_reference(
         "bf16": torch.bfloat16,
     }
     assert reference_precision in dtypes, reference_precision
-    model = (
-        AutoModelForCausalLM.from_pretrained(
-            model_dir,
-            local_files_only=True,
-            trust_remote_code=trust_remote_code,
-            dtype=dtypes[reference_precision],
-        )
-        .eval()
-        .to("cuda")
-    )
-    inputs = _render_prompt(tokenizer, prompt, case).to(model.device)
+    # Large-model references may distribute FP32 weights without relaxing the oracle.
+    device_map = manifest.get("reference_device_map")
+    reference_options = {} if device_map is None else {"device_map": device_map}
+    if "reference_max_memory" in manifest:
+        assert device_map is not None, "reference_max_memory requires reference_device_map"
+        reference_options["max_memory"] = {
+            int(device) if str(device).isdigit() else device: budget
+            for device, budget in manifest["reference_max_memory"].items()
+        }
+    inputs = _reference_inputs(model_dir, manifest, tokenizer, prompt, case)
+    model_class = AutoModelForCausalLM
+    if "image" in case or "images" in case:
+        from transformers import AutoModelForImageTextToText
+        model_class = AutoModelForImageTextToText
+    model = model_class.from_pretrained(
+        model_dir,
+        local_files_only=True,
+        trust_remote_code=trust_remote_code,
+        dtype=dtypes[reference_precision],
+        **reference_options,
+    ).eval()
+    if device_map is None:
+        model = model.to("cuda")
+    inputs = inputs.to(model.device)
     prompt_ids = inputs["input_ids"][0].tolist()
     if "expected_prompt_token_ids" in case:
         assert prompt_ids == case["expected_prompt_token_ids"]
