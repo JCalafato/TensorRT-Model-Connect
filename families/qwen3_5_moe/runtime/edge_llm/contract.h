@@ -37,7 +37,8 @@ inline void validate_marker(const nlohmann::json& m, const std::string& family,
                m.value("mtp_verify_size", 0) != 4 || m.at("max_sequence_length").get<int>() <= 4)
             : (variant != "autoregressive" &&
                ((variant != "dflash" && variant != "dflash_ddtree") ||
-                m.value("dflash_block_size", 0) != 16 || m.at("max_sequence_length").get<int>() <= 16)))
+                m.value("dflash_block_size", 0) != 16 ||
+                m.at("max_sequence_length").get<int>() <= 16)))
         throw std::runtime_error("Invalid Qwen3.5-MoE speculative bundle contract");
     const auto weight = m.at("weight_format").get<std::string>();
     const auto& policy = m.at("source_policy");

@@ -74,8 +74,8 @@ make_request(const std::string& prompt, const TextGenerationConfig& config, bool
     if (has_image) {
         // Edge 0.11 raw mode requires preformatted media content. Its provider
         // template still owns chat-mode formatting of the typed image part.
-        messages.push_back({"user", {{"image", "<|vision_start|><|image_pad|><|vision_end|>"},
-                                    {"text", prompt}}});
+        messages.push_back(
+            {"user", {{"image", "<|vision_start|><|image_pad|><|vision_end|>"}, {"text", prompt}}});
     } else {
         messages.push_back({"user", {{"text", prompt}}});
     }

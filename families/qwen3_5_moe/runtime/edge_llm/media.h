@@ -47,7 +47,8 @@ inline TextGenerationConfig generation_config(api::ConfigView supplied, bool med
         const auto value = api::config_get<std::int64_t>(supplied, schema, name).value_or(fallback);
         if (value < std::numeric_limits<std::int32_t>::min() ||
             value > std::numeric_limits<std::int32_t>::max())
-            throw std::invalid_argument(std::string("Qwen3.5-MoE option outside int32 range: ") + name);
+            throw std::invalid_argument(std::string("Qwen3.5-MoE option outside int32 range: ") +
+                                        name);
         return static_cast<std::int32_t>(value);
     };
     TextGenerationConfig config;
@@ -130,9 +131,8 @@ inline edge::imageUtils::ImageData video_buffer(const api::VideoView& video) {
 
 /// Preserve image, video and text order in the checkpoint provider messages.
 template <class Request>
-inline edge::LLMGenerationRequest media_request(const Request& input,
-                                                const TextGenerationConfig& config,
-                                                int default_length) {
+inline edge::LLMGenerationRequest
+media_request(const Request& input, const TextGenerationConfig& config, int default_length) {
     if constexpr (!std::is_same_v<Request, api::ImageVideoTextToTextRequest>) {
         if (!input.tools.empty())
             throw std::invalid_argument("Qwen3.5-MoE media does not map tools");
@@ -156,7 +156,8 @@ inline edge::LLMGenerationRequest media_request(const Request& input,
             message.role = "assistant";
             break;
         default:
-            throw std::invalid_argument("Qwen3.5-MoE media accepts system, user and assistant roles");
+            throw std::invalid_argument(
+                "Qwen3.5-MoE media accepts system, user and assistant roles");
         }
         message.contentIsArray = true;
         if (source.parts.empty())

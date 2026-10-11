@@ -89,9 +89,8 @@ int main() {
     }
     namespace api = trtmc::internal;
     const std::uint8_t first[] = {255, 0, 0}, second[] = {0, 255, 0};
-    std::vector<api::ImageView> frames{
-        {first, 3, 1, 1, 3, api::ImageFormat::UInt8},
-        {second, 3, 1, 1, 3, api::ImageFormat::UInt8}};
+    std::vector<api::ImageView> frames{{first, 3, 1, 1, 3, api::ImageFormat::UInt8},
+                                       {second, 3, 1, 1, 3, api::ImageFormat::UInt8}};
     std::vector<double> times{1.0, 2.5};
     api::VideoView video{{frames.data(), frames.size()}, {times.data(), times.size()}};
     const auto packed = edge::video_buffer(video);

@@ -80,16 +80,17 @@ class Artifacts {
                 throw std::runtime_error("Invalid Qwen3.5-MoE Edge artifact: " + name);
         }
         std::vector<std::string> required{
-                                          "edge_llm/engine/tokenizer.json",
-                                          "edge_llm/engine/tokenizer_config.json",
-                                          "edge_llm/engine/chat_template.jinja",
-                                          "edge_llm/checkpoint/config.json",
-                                          "edge_llm/checkpoint/model.safetensors.index.json"};
+            "edge_llm/engine/tokenizer.json", "edge_llm/engine/tokenizer_config.json",
+            "edge_llm/engine/chat_template.jinja", "edge_llm/checkpoint/config.json",
+            "edge_llm/checkpoint/model.safetensors.index.json"};
         if (marker.value("execution_variant", "autoregressive") == "autoregressive") {
-            required.insert(required.end(), {"edge_llm/engine/llm.engine", "edge_llm/engine/config.json"});
+            required.insert(required.end(),
+                            {"edge_llm/engine/llm.engine", "edge_llm/engine/config.json"});
         } else {
-            required.insert(required.end(), {"edge_llm/engine/spec_base.engine", "edge_llm/engine/spec_draft.engine",
-                "edge_llm/engine/base_config.json", "edge_llm/engine/draft_config.json"});
+            required.insert(required.end(), {"edge_llm/engine/spec_base.engine",
+                                             "edge_llm/engine/spec_draft.engine",
+                                             "edge_llm/engine/base_config.json",
+                                             "edge_llm/engine/draft_config.json"});
             if (marker.at("execution_variant") != "mtp")
                 required.push_back("edge_llm/checkpoint/draft/config.json");
         }
@@ -178,8 +179,10 @@ class Stream {
 void validate_bundle_tokenizer(const BundleReader& bundle, const nlohmann::json& marker) {
     const auto bytes = bundle.read_section("edge_llm/engine/tokenizer.json");
     const auto config = bundle.read_section("edge_llm/engine/tokenizer_config.json");
-    const auto engine = bundle.read_section(marker.value("execution_variant", "autoregressive") == "autoregressive"
-        ? "edge_llm/engine/config.json" : "edge_llm/engine/base_config.json");
+    const auto engine =
+        bundle.read_section(marker.value("execution_variant", "autoregressive") == "autoregressive"
+                                ? "edge_llm/engine/config.json"
+                                : "edge_llm/engine/base_config.json");
     validate_raw_tokenizer(nlohmann::json::parse(bytes.begin(), bytes.end()),
                            nlohmann::json::parse(config.begin(), config.end()),
                            nlohmann::json::parse(engine.begin(), engine.end()));
@@ -189,7 +192,8 @@ void validate_bundle_tokenizer(const BundleReader& bundle, const nlohmann::json&
 std::unique_ptr<trt_edgellm::rt::LLMInferenceRuntime>
 make_runtime(const Artifacts& artifacts, const nlohmann::json& marker, cudaStream_t stream) {
     using Runtime = trt_edgellm::rt::LLMInferenceRuntime;
-    const auto media = marker.at("task") == IVisionLanguageGeneration::kTask ? artifacts.engine() : "";
+    const auto media =
+        marker.at("task") == IVisionLanguageGeneration::kTask ? artifacts.engine() : "";
     const auto variant = marker.value("execution_variant", "autoregressive");
     if (variant == "dflash" || variant == "dflash_ddtree" || variant == "mtp") {
         trt_edgellm::rt::SpecDecodeDraftingConfig drafting{};
@@ -198,14 +202,14 @@ make_runtime(const Artifacts& artifacts, const nlohmann::json& marker, cudaStrea
         drafting.verifySize = variant == "mtp" ? 4 : 16;
         if (variant != "mtp")
             drafting.dflashBlockSize = 16;
-        return std::make_unique<Runtime>(artifacts.engine(), media,
-            std::unordered_map<std::string, std::string>{}, drafting, stream,
-            trt_edgellm::rt::ContextCacheConfig{}, artifacts.checkpoint(),
+        return std::make_unique<Runtime>(
+            artifacts.engine(), media, std::unordered_map<std::string, std::string>{}, drafting,
+            stream, trt_edgellm::rt::ContextCacheConfig{}, artifacts.checkpoint(),
             variant == "mtp" ? "" : (fs::path(artifacts.checkpoint()) / "draft").string());
     }
     return std::make_unique<Runtime>(artifacts.engine(), media,
-        std::unordered_map<std::string, std::string>{}, stream,
-        trt_edgellm::rt::ContextCacheConfig{}, artifacts.checkpoint());
+                                     std::unordered_map<std::string, std::string>{}, stream,
+                                     trt_edgellm::rt::ContextCacheConfig{}, artifacts.checkpoint());
 }
 
 /// Thin persistent Edge API adapter; serialization prevents concurrent use of Edge request state.
@@ -291,7 +295,11 @@ class TextModel final : public ITextGeneration, public api::IModel, public api::
 };
 
 /// Complete VLM bundles expose only the vision interface; null images retain raw/chat controls.
-class VisionModel final : public IVisionLanguageGeneration, public api::IModel, public api::IImagesTextToText, public api::IVideoTextToText, public api::IImageVideoTextToText {
+class VisionModel final : public IVisionLanguageGeneration,
+                          public api::IModel,
+                          public api::IImagesTextToText,
+                          public api::IVideoTextToText,
+                          public api::IImageVideoTextToText {
   public:
     VisionModel(const BundleReader& bundle, const nlohmann::json& marker)
         : state_(bundle, marker) {}
@@ -306,7 +314,8 @@ class VisionModel final : public IVisionLanguageGeneration, public api::IModel, 
     TextResult run(const api::VideoTextToTextRequest& input, api::ConfigView supplied) override {
         return state_.execute(media_request(input, generation_config(supplied, true, 128), 128));
     }
-    TextResult run(const api::ImageVideoTextToTextRequest& input, api::ConfigView supplied) override {
+    TextResult run(const api::ImageVideoTextToTextRequest& input,
+                   api::ConfigView supplied) override {
         return state_.execute(media_request(input, generation_config(supplied, true, 128), 128));
     }
     TextResult generate(const std::string& prompt, const float* pixels, std::int32_t height,

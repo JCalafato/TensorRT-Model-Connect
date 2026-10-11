@@ -139,8 +139,11 @@ int main() {
     mtp["mtp_verify_size"] = 4;
     mtp["weight_format"] = "nvfp4";
     mtp["target"] = {{"sm", 120}};
-    mtp["source_policy"] = {{"weights", "nvfp4"}, {"visual", "fp16"}, {"kv", "fp8"},
-                            {"group_size", 16}, {"llm", "mixed_nvfp4_experts_shared_head_fp8_attention_gdn"}};
+    mtp["source_policy"] = {{"weights", "nvfp4"},
+                            {"visual", "fp16"},
+                            {"kv", "fp8"},
+                            {"group_size", 16},
+                            {"llm", "mixed_nvfp4_experts_shared_head_fp8_attention_gdn"}};
     mtp["checkpoint_layout"]["layout"] = "nvfp4";
     edge::validate_marker(mtp, "qwen3_5_moe", "vision_language_generation", "trt");
     for (const auto* field : {"mtp_draft_steps", "mtp_verify_size", "max_sequence_length"}) {

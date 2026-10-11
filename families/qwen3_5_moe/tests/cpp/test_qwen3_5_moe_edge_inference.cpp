@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "trtmc/bundle.h"
+#include "trtmc/internal/language.h"
 #include "trtmc/runtime/family_loader.h"
 #include "trtmc/task.h"
-#include "trtmc/internal/language.h"
 
 #include <chrono>
 #include <fstream>
@@ -128,23 +128,30 @@ int main(int argc, char** argv) {
                     const auto w = request.at("width").get<std::uint32_t>();
                     for (const auto& path : request.at("video_frames")) {
                         std::ifstream file(path.get<std::string>(), std::ios::binary);
-                        storage.emplace_back(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+                        storage.emplace_back(std::istreambuf_iterator<char>(file),
+                                             std::istreambuf_iterator<char>());
                         const auto& bytes = storage.back();
                         if (h == 0 || w == 0 || bytes.size() != static_cast<std::size_t>(h) * w * 3)
                             throw std::invalid_argument("Invalid RGB video frame fixture");
-                        frames.push_back({bytes.data(), bytes.size(), h, w, 3, api::ImageFormat::UInt8});
+                        frames.push_back(
+                            {bytes.data(), bytes.size(), h, w, 3, api::ImageFormat::UInt8});
                     }
                     const auto timestamps = request.value("timestamps", std::vector<double>{});
                     const auto prompt = request.at("prompt").get<std::string>();
                     std::vector<api::VideoTextPart> parts{
-                        api::VideoView{{frames.data(), frames.size()}, {timestamps.data(), timestamps.size()}},
+                        api::VideoView{{frames.data(), frames.size()},
+                                       {timestamps.data(), timestamps.size()}},
                         api::TextPartView{prompt}};
-                    api::VideoTextMessage message{api::MessageRole::User, {parts.data(), parts.size()}};
+                    api::VideoTextMessage message{api::MessageRole::User,
+                                                  {parts.data(), parts.size()}};
                     const std::vector<api::ConfigEntry> options{
                         {"max_new_tokens", std::int64_t(config.max_new_tokens)},
-                        {"top_k", std::int64_t(config.top_k)}, {"seed", std::int64_t(config.seed)},
-                        {"top_p", double(config.top_p)}, {"temperature", double(config.temperature)},
-                        {"use_chat_template", config.use_chat_template}, {"enable_thinking", config.enable_thinking}};
+                        {"top_k", std::int64_t(config.top_k)},
+                        {"seed", std::int64_t(config.seed)},
+                        {"top_p", double(config.top_p)},
+                        {"temperature", double(config.temperature)},
+                        {"use_chat_template", config.use_chat_template},
+                        {"enable_thinking", config.enable_thinking}};
                     result = video->run({{&message, 1}, {}}, {options.data(), options.size()});
                 } else if (request.contains("image_file")) {
                     if (!vision)
