@@ -133,7 +133,9 @@ def build(request, writer) -> None:
     )
     os.close(descriptor)
     log = Path(name)
-    with tempfile.TemporaryDirectory(prefix="trtmc-qwen35-moe-edge-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=f".{request.output_path.name}.edge-stage-", dir=request.output_path.parent
+    ) as directory:
         try:
             files, marker = adapter(request, raw, target, Path(directory), log)
         except Exception as error:

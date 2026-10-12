@@ -190,6 +190,10 @@ def test_success_publishes_without_fake_native(source, monkeypatch):
     dispatch.build(request, writer)
     prepare.assert_called_once()
     publish.assert_called_once_with(request, writer, {}, {})
+    staged = prepare.call_args.args[3]
+    assert staged.parent == request.output_path.parent
+    assert staged.name.startswith(f".{request.output_path.name}.edge-stage-")
+    assert not staged.exists()
 
 
 def test_preparation_failure_warns_and_preserves_cause_once(source, monkeypatch, caplog):
