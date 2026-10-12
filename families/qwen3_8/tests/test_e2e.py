@@ -216,6 +216,8 @@ def _native_arguments(bundle: Path, runtime_root: Path, prompt: str, case: dict)
         if isinstance(value, bool):
             value = "true" if value else "false"
         arguments.extend([option, str(value)])
+    if "video_frames" in case:
+        raise ValueError("Native video arguments are not mapped by this E2E harness")
     if "image" in case and "images" in case:
         raise ValueError("Specify image or ordered images, not both")
     if "image" in case:

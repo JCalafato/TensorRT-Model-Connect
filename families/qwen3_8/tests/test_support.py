@@ -38,9 +38,12 @@ def _edge_cli_source(tmp_path):
     return source, draft
 
 
-@pytest.mark.parametrize("variant", ["dspark", "dflash", "mtp"])
+@pytest.mark.parametrize("variant, quantization", [
+    ("dspark", None), ("dflash", None), ("mtp", None),
+    ("dflash", "int4_awq"), ("mtp", "int4_awq"),
+])
 @pytest.mark.parametrize("precision", [None, "fp16", "fp32", "bf16"])
-def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision, variant):
+def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision, variant, quantization):
     from tensorrt_model_connect import family_cli as build_cli
     from families.qwen3_8.edge_llm import dispatch
     from families.qwen3_8.edge_llm.config import Qwen38BuildRequest
@@ -62,6 +65,8 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision, v
 
     monkeypatch.setattr(dispatch, "build_paired", paired)
     options = ["--precision", precision] if precision else []
+    if quantization is not None:
+        options.extend(["--quantization", quantization])
     companions = [] if variant == "mtp" else ["--companion", f"draft={draft}"]
     assert build_cli.main(["qwen3_8",
         "build", str(source), *options, "-o", str(output),
@@ -69,6 +74,7 @@ def test_edge_cli_uses_ordinary_family_build(tmp_path, monkeypatch, precision, v
     ]) == 0
     assert len(seen) == 1
     assert seen[0].precision == (precision or "fp16")
+    assert seen[0].quantization == quantization
     assert output.is_file()
 
     from families.qwen3_8.tests.test_e2e import _build_bundle
@@ -112,6 +118,7 @@ def test_edge_cli_help_is_family_owned(tmp_path, capsys):
     help_text = capsys.readouterr().out
     assert "--execution-variant {dspark,dflash,mtp}" in help_text
     assert "--companion" in help_text
+    assert "--quantization {none,nvfp4,fp8,int4_awq}" in help_text
 
 
 @pytest.mark.parametrize("vision", [False, True])
@@ -599,6 +606,10 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
             _native_arguments(output, tmp_path, "Compare.", {**case, "image": "other.jpeg"})
         with pytest.raises(ValueError, match="empty"):
             _native_arguments(output, tmp_path, "Compare.", {**case, "images": []})
+        with pytest.raises(ValueError, match="video arguments are not mapped"):
+            _native_arguments(output, tmp_path, "Compare.", {
+                "max_new_tokens": 128, "video_frames": ["first.jpeg", "second.jpeg"],
+            })
 
 
 def test_declared_help_is_offline_and_dependency_free():
