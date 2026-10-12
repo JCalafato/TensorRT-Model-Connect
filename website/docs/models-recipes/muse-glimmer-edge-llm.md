@@ -17,7 +17,7 @@ The owning `trtmc muse_glimmer build` command accepts
 `--execution-variant autoregressive` or `--execution-variant dflash`.
 The latter requires `--companion` pointing to the matched official assistant
 or DFlash2 checkpoint. The draft architecture selects the version, using the
-same public block16 workflow. No shared CLI extension is required.
+same public block size 16 workflow. No shared CLI extension is required.
 
 The text-only NVFP4 route does not establish FP16 image/video support.
 The original FP16 checkpoint and FP16 pairs remain blocked by available
