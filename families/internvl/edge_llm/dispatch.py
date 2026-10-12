@@ -247,7 +247,10 @@ def build(request, writer, native) -> None:
             )
             if target["sm"] != profile_sm and not (larger_memory_retry or awq_sm120_control):
                 adapter = None
-            if adapter is None and getattr(request, "int4_gemm_plugin_version", None) is not None:
+            if adapter is None and (
+                weight_format == "int4_awq"
+                or getattr(request, "int4_gemm_plugin_version", None) is not None
+            ):
                 raise UnavailableEdgeConfiguration("No Edge INT4 route is mapped for this target")
             if adapter is not None:
                 validate_execution_capacity(request, config, target, weight_format)

@@ -194,7 +194,7 @@ def test_internvl_does_not_register_unowned_companion_options():
     assert "--companion" not in flags
 
 
-@pytest.mark.parametrize("mode", ["absent", "success", "corrupt", "failure", "cancel", "device_failure", "capacity_failure", "larger_device", "quality_failure", "quality_failure_sm120", "native_capacity_failure", "native_larger_device"])
+@pytest.mark.parametrize("mode", ["absent", "success", "corrupt", "failure", "cancel", "device_failure", "capacity_failure", "larger_device", "quality_failure", "quality_failure_sm120", "awq_unmapped_qwen2", "awq_unmapped_qwen3", "native_capacity_failure", "native_larger_device"])
 def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, caplog, mode):
     import json
     from tensorrt_model_connect.build import BuildRequest
@@ -215,6 +215,12 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
             "max_position_embeddings": 32768, "model_type": "qwen2",
             "num_hidden_layers": 28, "hidden_size": 1536,
         }))
+    if mode.startswith("awq_unmapped"):
+        (source / "config.json").write_text(json.dumps({
+            "max_position_embeddings": 32768,
+            "model_type": "qwen3" if mode.endswith("qwen3") else "qwen2",
+            "num_hidden_layers": 32, "hidden_size": 4096,
+        }))
     monkeypatch.setattr(dispatch, "device_memory_bytes", lambda: (
         40 if mode == "capacity_failure" else 64 if mode == "native_larger_device" else 48
     ) * 1024 ** 3)
@@ -231,12 +237,12 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
     if hasattr(dispatch, "source_quantization"):
         monkeypatch.setattr(dispatch, "source_quantization", lambda *_: "fp16")
     if hasattr(builder, "request_weight_format"):
-        monkeypatch.setattr(builder, "request_weight_format", lambda *_: "int4_awq" if mode.startswith("quality_failure") else "fp16")
+        monkeypatch.setattr(builder, "request_weight_format", lambda *_: "int4_awq" if mode.startswith(("quality_failure", "awq_unmapped")) else "fp16")
     request = BuildRequest(source, tmp_path / "out", "internvl", "vision_language_generation", "fp16",
                            max_sequence_length=384)
     writer = object()
     target = {"os": "linux", "arch": "x86_64", "sm": 80, "tensorrt_version": "11.1.0.106"}
-    if mode == "quality_failure_sm120":
+    if mode == "quality_failure_sm120" or mode.startswith("awq_unmapped"):
         target["sm"] = 120
     target_calls = []
 
@@ -273,6 +279,10 @@ def test_edge_optional_package_and_output_local_staging(tmp_path, monkeypatch, c
         assert not stages
     elif mode == "native_capacity_failure":
         with pytest.raises(dispatch.UnavailableEdgeConfiguration, match="native FP16"):
+            dispatch.build(request, writer, native)
+        assert not stages
+    elif mode.startswith("awq_unmapped"):
+        with pytest.raises(dispatch.UnavailableEdgeConfiguration, match="No Edge INT4 route"):
             dispatch.build(request, writer, native)
         assert not stages
     elif mode == "cancel":

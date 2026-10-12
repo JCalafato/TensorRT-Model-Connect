@@ -17,9 +17,9 @@ Python wheel can supply builder tools, but does not replace that native SDK.
 The family-only `--int4-gemm-plugin-version` option preserves the recorded INT4
 backend controls without changing quality gates.
 
-Nine exact installed single-image profiles passed the local rollout. AWQ1B,
-2B and14B remain executable with documented accuracy failures. The recorded
-InternVL3.5-14B FP16/context384 build cannot fit the tested40/48GiB devices and
+Nine exact installed single-image profiles passed the local rollout. AWQ 1B,
+2B and 14B remain executable with documented accuracy failures. The recorded
+InternVL3.5-14B FP16/context 384 build cannot fit the tested 40/48 GiB devices and
 is rejected there before repeating a known failure. Larger GPUs are not thereby
 qualified or blacklisted. See the
 [owning recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/internvl/edge_llm/README.md)
