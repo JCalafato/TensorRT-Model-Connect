@@ -743,6 +743,80 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
     assert not output.exists()
 
 
+    if not options:
+        from pathlib import Path
+        from types import SimpleNamespace
+        from families.qwen3_5.tests import test_e2e as e2e
+        with monkeypatch.context() as patch:
+            cases_dir = tmp_path / "cases"
+            (cases_dir / "manifests").mkdir(parents=True)
+            manifest = {"family": "qwen3_5", "task": "vision_language_generation",
+                        "precision": "fp16", "max_sequence_length": 4096,
+                        "tensor_parallel_size": 2, "testcases": [{"name": "image-tp2"}]}
+            (cases_dir / "manifests/image.json").write_text(json.dumps(manifest))
+            patch.setattr(e2e, "_TEST_DIR", cases_dir)
+            assert e2e._load_cases()["image-tp2"][0]["task"] == "vision_language_generation"
+            requests = []
+            def build_case(request):
+                requests.append(request)
+                request.output_path.write_bytes(b"bundle fixture")
+            patch.setattr(e2e, "build", build_case)
+            e2e._build_bundle(manifest, source, output)
+            assert requests[0].task == "vision_language_generation"
+            assert requests[0].tensor_parallel_size == 2
+            patch.setattr(e2e.shutil, "which", lambda _name: "/usr/bin/mpirun")
+            for edge in (False, True):
+                for task in ("text_generation", "vision_language_generation"):
+                    sections = ["engine.rank0.plan", "engine.rank1.plan"]
+                    if edge:
+                        sections = ["edge_llm.json", "edge_llm/engine/llm_world2_rank0.engine",
+                                    "edge_llm/engine/llm_world2_rank1.engine"]
+                        if task == "vision_language_generation":
+                            sections.append("edge_llm/engine/visual/visual.engine")
+                    inspected = {"family": "qwen3_5", "task": (
+                        "images_text_to_text" if edge and task == "vision_language_generation" else task
+                    ), "sections": sections}
+                    calls = []
+                    result = {"text": "fixture", "token_ids": [1]}
+                    def run(command, **kwargs):
+                        calls.append((command, kwargs))
+                        if command[1] == "inspect":
+                            stdout = json.dumps(inspected)
+                        else:
+                            stdout = ("" if edge else "[1,0]<stdout>:") + json.dumps(result)
+                        return SimpleNamespace(stdout=stdout, stderr="", args=command,
+                                               check_returncode=lambda: None)
+                    patch.setattr(e2e.subprocess, "run", run)
+                    assert e2e._assert_rank_sections(Path("trtmc"), output, 2, task) is edge
+                    assert e2e._run_native(Path("trtmc"), tmp_path, output, "Describe.",
+                                          {"max_new_tokens": 8}, 2, tmp_path, edge=edge) == result
+                    assert (calls[-1][0][0] == "trtmc") is edge
+                    if edge:
+                        assert "TRTMC_NCCL_RENDEZVOUS" not in calls[-1][1]["env"]
+            # Compare identical prompt-template defaults, including the omitted option.
+            from PIL import Image
+            from transformers import AutoProcessor
+            image = tmp_path / "image.png"
+            Image.new("RGB", (2, 2)).save(image)
+            templates = []
+            class Processor:
+                image_processor = SimpleNamespace(patch_size=14, merge_size=2)
+                chat_template = "template"
+                def apply_chat_template(self, messages, **kwargs):
+                    templates.append(kwargs)
+                    return "rendered"
+                def __call__(self, **kwargs):
+                    return {"image_grid_thw": SimpleNamespace(tolist=lambda: [[1, 1, 1]])}
+            patch.setattr(AutoProcessor, "from_pretrained", lambda *_a, **_k: Processor())
+            for option in ({}, {"enable_thinking": False}, {"enable_thinking": True}):
+                e2e._reference_inputs(source, manifest, SimpleNamespace(chat_template="fallback"),
+                                      "Describe.", {"image": image, **option})
+                if option:
+                    assert templates[-1]["enable_thinking"] is option["enable_thinking"]
+                else:
+                    assert "enable_thinking" not in templates[-1]
+
+
 def test_declared_help_is_offline_and_dependency_free():
     """Actual child-process help needs neither a checkpoint nor GPU imports."""
     import subprocess

@@ -30,7 +30,7 @@ def _load_cases() -> dict[str, tuple[dict, dict]]:
     for path in sorted((_TEST_DIR / "manifests").glob("*.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
         assert manifest["family"] == _FAMILY, path
-        assert manifest["task"] == "text_generation", path
+        assert manifest["task"] in {"text_generation", "vision_language_generation"}, path
         assert isinstance(manifest["precision"], str), path
         assert isinstance(manifest["max_sequence_length"], int), path
         assert isinstance(manifest["tensor_parallel_size"], int), path
@@ -92,8 +92,6 @@ def _required_environment(tp_size: int):
     assert torch.cuda.device_count() >= tp_size, (
         f"{_FAMILY} TP{tp_size} requires {tp_size} visible GPUs; found {torch.cuda.device_count()}"
     )
-    if tp_size > 1:
-        assert shutil.which("mpirun"), "selected TP E2E requires mpirun"
     return binary, runtime_root, torch
 
 
@@ -142,7 +140,7 @@ def _build_bundle(manifest: dict, model_dir: Path, bundle: Path) -> None:
             model_dir=model_dir,
             output_path=bundle,
             family=_FAMILY,
-            task="text_generation",
+            task=manifest["task"],
             precision=manifest["precision"],
             max_sequence_length=manifest["max_sequence_length"],
             tensor_parallel_size=manifest["tensor_parallel_size"],
@@ -153,7 +151,8 @@ def _build_bundle(manifest: dict, model_dir: Path, bundle: Path) -> None:
     assert bundle.is_file() and bundle.stat().st_size > 0, bundle
 
 
-def _assert_rank_sections(binary: Path, bundle: Path, tp_size: int) -> None:
+def _assert_rank_sections(binary: Path, bundle: Path, tp_size: int,
+                          task: str = "text_generation") -> bool:
     inspected = subprocess.run(
         [str(binary), "inspect", str(bundle)],
         check=True,
@@ -165,14 +164,24 @@ def _assert_rank_sections(binary: Path, bundle: Path, tp_size: int) -> None:
     record_evidence("native", {"stdout": getattr(inspected, "stdout", None), "stderr": getattr(inspected, "stderr", None)})
     payload = json.loads(inspected.stdout)
     assert payload["family"] == _FAMILY
-    assert payload["task"] == "text_generation"
-    if tp_size > 1:
+    edge = "edge_llm.json" in payload["sections"]
+    expected_task = "images_text_to_text" if edge and task == "vision_language_generation" else task
+    # Previously published single-image bundles retain the legacy task ID.
+    assert payload["task"] in {task, expected_task}
+    if edge:
+        if tp_size == 2:
+            for rank in range(tp_size):
+                assert f"edge_llm/engine/llm_world2_rank{rank}.engine" in payload["sections"]
+        if task == "vision_language_generation":
+            assert "edge_llm/engine/visual/visual.engine" in payload["sections"]
+    elif tp_size > 1:
         rank_sections = {
             name
             for name in payload["sections"]
             if name.startswith("engine.rank") and name.endswith(".plan")
         }
         assert rank_sections == {f"engine.rank{rank}.plan" for rank in range(tp_size)}
+    return edge
 
 
 def _native_arguments(bundle: Path, runtime_root: Path, prompt: str, case: dict) -> list[str]:
@@ -222,10 +231,12 @@ def _run_native(
     case: dict,
     tp_size: int,
     tmp_path: Path,
+    *, edge: bool = False,
 ) -> dict:
     command = [str(binary), *_native_arguments(bundle, runtime_root, prompt, case)]
     environment = dict(os.environ)
-    if tp_size > 1:
+    if tp_size > 1 and not edge:
+        assert shutil.which("mpirun"), "selected native TP E2E requires mpirun"
         environment["TRTMC_NCCL_RENDEZVOUS"] = str(tmp_path / "nccl.rendezvous")
         prefix = ["mpirun", "--tag-output", "-np", str(tp_size)]
         for name in ("LD_LIBRARY_PATH", "CUDA_VISIBLE_DEVICES", "TRTMC_NCCL_RENDEZVOUS"):
@@ -246,7 +257,7 @@ def _run_native(
     (tmp_path / "native.stdout.log").write_text(completed.stdout, encoding="utf-8")
     (tmp_path / "native.stderr.log").write_text(completed.stderr, encoding="utf-8")
     completed.check_returncode()
-    if tp_size == 1:
+    if tp_size == 1 or edge:
         return json.loads(completed.stdout)
 
     rank_zero_payloads = []
@@ -362,10 +373,13 @@ def _reference_inputs(model_dir: Path, manifest: dict, tokenizer, prompt: str, c
             *({"type": "image"} for _ in paths), {"type": "text", "text": prompt},
         ]}]
         # Base checkpoints may embed their provider template only in tokenizer_config.json.
+        template_options = {}
+        if "enable_thinking" in case:
+            template_options["enable_thinking"] = case["enable_thinking"]
         rendered = processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True,
             chat_template=processor.chat_template or tokenizer.chat_template,
-            enable_thinking=case.get("enable_thinking", False),
+            **template_options,
         )
         images = []
         for path in paths:
@@ -573,7 +587,7 @@ def test_e2e(case_name: str, request, tmp_path: Path) -> None:
     with evidence_stage("build"):
         _build_bundle(manifest, model_dir, bundle)
     with evidence_stage("compare"):
-        _assert_rank_sections(binary, bundle, tp_size)
+        edge = _assert_rank_sections(binary, bundle, tp_size, manifest["task"])
     with evidence_stage("native"):
         payload = _run_native(
             binary,
@@ -583,6 +597,7 @@ def test_e2e(case_name: str, request, tmp_path: Path) -> None:
             case,
             tp_size,
             tmp_path,
+            edge=edge,
         )
     record_evidence("native", payload)
     reruns = int(case.get("determinism_reruns", 0))
@@ -596,6 +611,7 @@ def test_e2e(case_name: str, request, tmp_path: Path) -> None:
                 case,
                 tp_size,
                 tmp_path,
+                edge=edge,
             )
         record_evidence("native", repeated)
         with evidence_stage("compare"):

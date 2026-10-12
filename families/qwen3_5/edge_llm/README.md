@@ -33,7 +33,7 @@ use SM120. Checkpoint-driven weight precision is separate from compute precision
 | Dense 0.8B, 2B, 4B and 9B, Instruct and Base | Original-weight text and image generation, TP1 |
 | Dense 27B | Original-weight text/image, TP2 LLM plus TP1 visual component |
 | Embedded MTP, original 0.8B/2B/4B/9B topologies | Text/image, TP1; three draft steps |
-| Embedded MTP, ModelOpt NVFP4 4B | Text/image, TP1 |
+| Embedded MTP, ModelOpt NVFP4 0.8B/2B/4B/9B topologies | Text/image, TP1; local model execution evidence is 4B only |
 | Listed 4B/9B DFlash companions | Original matched target/draft; linear or DDTree, block16 |
 | Listed 4B NVFP4 DFlash pair | Matched official target/draft exports, linear or DDTree |
 | Dense standalone ModelOpt targets | NVFP4, FP8, MXFP8, INT4-AWQ group128, INT8 SmoothQuant; TP1 |
@@ -41,6 +41,9 @@ use SM120. Checkpoint-driven weight precision is separate from compute precision
 | 2B NVFP4 weights with NVFP4 LM head | Standalone text, checkpoint-driven component precision |
 
 This table describes execution admission, **not universal quality qualification**.
+NVFP4 MTP uses the same four topology admissions as original-weight MTP. Only
+the 4B NVFP4 profile has local model-engine evidence; the other NVFP4 sizes are
+command mappings, not locally executed or accuracy-qualified results.
 Results belong to individual checkpoints, profiles and requests. Accuracy-only
 failures remain executable; they do not become passing results.
 
