@@ -1043,6 +1043,7 @@ def test_wheel_validation_requires_exact_new_payload(tmp_path: Path, executor: s
             "Name: package\n"
             "Version: 0.1\n"
             "Provides-Extra: cutedsl\n"
+            "Provides-Extra: edgellm\n"
             "Provides-Extra: serve\n"
             "Provides-Extra: test\n",
         )

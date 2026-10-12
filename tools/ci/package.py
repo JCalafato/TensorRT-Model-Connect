@@ -188,7 +188,7 @@ class WheelArchiveValidator:
                 for line in metadata.splitlines()
                 if line.startswith("Provides-Extra:")
             )
-            if extras != ["cutedsl", "serve", "test"]:
+            if extras != ["cutedsl", "edgellm", "serve", "test"]:
                 raise CiError(f"{wheel}: expected only application extras, found {extras}")
             expected_server_python = {
                 path.relative_to(
