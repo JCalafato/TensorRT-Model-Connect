@@ -194,6 +194,7 @@ def test_success_publishes_without_fake_native(source, monkeypatch):
     assert staged.parent == request.output_path.parent
     assert staged.name.startswith(f".{request.output_path.name}.edge-stage-")
     assert not staged.exists()
+    assert not prepare.call_args.args[4].exists()
 
 
 def test_preparation_failure_warns_and_preserves_cause_once(source, monkeypatch, caplog):

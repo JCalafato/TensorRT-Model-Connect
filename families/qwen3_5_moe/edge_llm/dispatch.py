@@ -151,3 +151,4 @@ def build(request, writer) -> None:
                 "Qwen3.5-MoE Edge build failed; native implementation unavailable"
             ) from error
         edge_llm.publish(request, writer, files, marker)
+        log.unlink(missing_ok=True)
