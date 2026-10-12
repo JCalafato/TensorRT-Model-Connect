@@ -152,7 +152,7 @@ def _build_bundle(manifest: dict, model_dir: Path, bundle: Path) -> None:
 
 
 def _assert_rank_sections(binary: Path, bundle: Path, tp_size: int,
-                          task: str = "text_generation") -> bool:
+                          task: str = "text_generation", *, require_edge: bool = False) -> bool:
     inspected = subprocess.run(
         [str(binary), "inspect", str(bundle)],
         check=True,
@@ -165,6 +165,7 @@ def _assert_rank_sections(binary: Path, bundle: Path, tp_size: int,
     payload = json.loads(inspected.stdout)
     assert payload["family"] == _FAMILY
     edge = "edge_llm.json" in payload["sections"]
+    assert edge or not require_edge, "This provisioned case requires Edge-LLM, not native fallback"
     expected_task = "images_text_to_text" if edge and task == "vision_language_generation" else task
     # Previously published single-image bundles retain the legacy task ID.
     assert payload["task"] in {task, expected_task}
@@ -244,15 +245,27 @@ def _run_native(
                 prefix.extend(["-x", name])
         command = [*prefix, *command]
 
-    completed = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=600,
-        env=environment,
-    )
-    record_evidence("commands", {"argv": getattr(completed, "args", None)})
+    record_evidence("commands", {"argv": command})
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired as error:
+        # TimeoutExpired stores partial output as bytes even with text=True.
+        partial = {}
+        for name in ("stdout", "stderr"):
+            value = getattr(error, name) or ""
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", errors="replace")
+            (tmp_path / f"native.{name}.log").write_text(value, encoding="utf-8")
+            partial[name] = value
+        record_evidence("native", partial)
+        raise
     record_evidence("native", {"stdout": getattr(completed, "stdout", None), "stderr": getattr(completed, "stderr", None)})
     (tmp_path / "native.stdout.log").write_text(completed.stdout, encoding="utf-8")
     (tmp_path / "native.stderr.log").write_text(completed.stderr, encoding="utf-8")
@@ -587,7 +600,10 @@ def test_e2e(case_name: str, request, tmp_path: Path) -> None:
     with evidence_stage("build"):
         _build_bundle(manifest, model_dir, bundle)
     with evidence_stage("compare"):
-        edge = _assert_rank_sections(binary, bundle, tp_size, manifest["task"])
+        edge = _assert_rank_sections(
+            binary, bundle, tp_size, manifest["task"],
+            require_edge=bool(manifest.get("require_edge_llm", False)),
+        )
     with evidence_stage("native"):
         payload = _run_native(
             binary,

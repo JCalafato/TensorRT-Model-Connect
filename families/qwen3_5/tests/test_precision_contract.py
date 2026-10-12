@@ -788,11 +788,33 @@ def test_declared_build_matches_legacy_request(tmp_path, monkeypatch, options):
                                                check_returncode=lambda: None)
                     patch.setattr(e2e.subprocess, "run", run)
                     assert e2e._assert_rank_sections(Path("trtmc"), output, 2, task) is edge
+                    if edge:
+                        assert e2e._assert_rank_sections(
+                            Path("trtmc"), output, 2, task, require_edge=True,
+                        )
+                    else:
+                        with pytest.raises(AssertionError, match="requires Edge-LLM"):
+                            e2e._assert_rank_sections(
+                                Path("trtmc"), output, 2, task, require_edge=True,
+                            )
                     assert e2e._run_native(Path("trtmc"), tmp_path, output, "Describe.",
                                           {"max_new_tokens": 8}, 2, tmp_path, edge=edge) == result
                     assert (calls[-1][0][0] == "trtmc") is edge
                     if edge:
                         assert "TRTMC_NCCL_RENDEZVOUS" not in calls[-1][1]["env"]
+            def timed_out(command, **kwargs):
+                assert kwargs["timeout"] == 600
+                raise e2e.subprocess.TimeoutExpired(
+                    command, 600, output=b"partial stdout", stderr=b"partial stderr",
+                )
+            patch.setattr(e2e.subprocess, "run", timed_out)
+            with pytest.raises(e2e.subprocess.TimeoutExpired):
+                e2e._run_native(
+                    Path("trtmc"), tmp_path, output, "Describe.",
+                    {"max_new_tokens": 8}, 2, tmp_path, edge=True,
+                )
+            assert (tmp_path / "native.stdout.log").read_text() == "partial stdout"
+            assert (tmp_path / "native.stderr.log").read_text() == "partial stderr"
             # Compare identical prompt-template defaults, including the omitted option.
             from PIL import Image
             from transformers import AutoProcessor
