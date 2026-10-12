@@ -94,6 +94,12 @@ def build(request, writer) -> None:
     if isinstance(request, Qwen38BuildRequest) and request.execution is not None:
         build_paired(request, writer, request.execution)
         return
+    from .edge_llm.dispatch import build as edge_build
+    edge_build(request, writer, _build_native)
+
+
+def _build_native(request, writer) -> None:
+    """Preserve the original native graph and unsupported-request behavior."""
     if request.dynamic_kv_cache:
         raise NotImplementedError("qwen3_8 does not support dynamic_kv_cache")
 

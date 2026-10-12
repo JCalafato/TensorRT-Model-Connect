@@ -95,26 +95,34 @@ chat-template handling are documented in the
 These local qualifications are separate from the registered manifest inventory
 and do not imply that CI executes the paired cases.
 
-### Qwen3.8 paired ONNX execution
+### Qwen3.6 / Qwen3.8 Edge-LLM execution
 
-Use `trtmc qwen3_8 build MODEL -o model.bundle` with the owning
-family's options. `trtmc qwen3_8 build --help` works offline without
-a checkpoint or GPU imports. This uses the existing
-[family CLI protocol](../extend/family-cli.md), not an extension to the shared parser.
+The family owns ordinary original-weight FP16 TP2, ordinary mixed-NVFP4 TP1,
+and explicit DSpark/DFlash2 ONNX execution through the optional Edge-LLM 0.11.0
+SDK. Use `trtmc qwen3_8 build MODEL -o model.bundle`; offline help and options
+use the existing [family CLI protocol](../extend/family-cli.md), not shared
+parser extensions. For a pair, add `--execution-variant dspark` or `dflash` and
+`--companion draft=/path/to/draft`.
 
-The Qwen3.8 family owns explicit mixed-NVFP4 target plus DSpark block7 execution
-through the optional pinned native Edge-LLM SDK. The qualified profile uses
-`RadixArk/Qwen3.8-27B-NVFP4` and `RadixArk/Qwen3.8-27B-DSpark`, text-only
-FP16 execution with the source mixed NVFP4/FP8 metadata, TP1/batch1 on SM120.
-Standalone builds retain the original native path; ordinary experimental Edge
-offload and other platform routes are not enabled by this change.
+The adapter additionally maps uniform NVFP4/INT4-AWQ embedded MTP and INT4-AWQ
+DFlash2. These have Python/native contract-test coverage, not local model-engine
+or accuracy qualification. For MTP, use `--execution-variant mtp` without an
+external companion. Prepared checkpoint metadata must match the owning recipe;
+Model Connect does not calibrate or quantize weights during this integration.
 
-Provision the [native SDK](../user-guides/configure-runtime.md#optional-native-edge-llm-sdk),
-then add `--execution-variant dspark --companion draft=/path/to/draft` to the build
-CLI. See the [owning Qwen3.8 recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_8/edge_llm/README.md)
-for exact revisions, capacities, sampling controls and quality evidence.
-The local paired qualification is not a registered manifest case and does not
-imply CI coverage of that pair or statistical sampling equivalence.
+Local text requests include exact independent FP32 matches, with separate
+quality failures retained. Qwen3.8 original single-image passed; ordered-image
+and video accuracy failed. Mixed-NVFP4
+ordinary and both paired raw-text profiles build and run, matching direct Edge
+exactly, but fail the independent FP32 NED gate. Accuracy failures remain
+executable and are not described as fully qualified. Original-weight speculative
+execution and batch-8 MTP remain outside this adapter's mapped scope.
+
+Provision the [native SDK](../user-guides/configure-runtime.md#optional-native-edge-llm-sdk).
+See the [owning recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_8/edge_llm/README.md)
+for exact checkpoints, commands, platform limits, and evidence scope. Local
+profile results do not imply registered CI or catalog-wide qualification.
+
 
 ### Nemotron-H Edge-LLM execution
 

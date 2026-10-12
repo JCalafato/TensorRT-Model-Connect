@@ -32,12 +32,17 @@
 
 #include "runtime/primitives/trt_common.h"
 #include "runtime/tensorrt/trt_module_impl.h"
+#include "trtmc/bundle.h"
+#include "trtmc/language.hpp"
 
 #include <NvInfer.h>
 #include <cstdint>
 #include <cuda_runtime_api.h>
+#include <deque>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -319,7 +324,116 @@ static void test_argmax_recurrent() {
     check(trtmc::RecurrentPipeline::argmax(v) == 1, "argmax = 1");
 }
 
-int main() {
+// Optional real-bundle mode of this existing test. Quality is evaluated by the
+// owning Python oracle; successful execution alone is not a quality pass.
+static int test_typed_bundle(const char* bundle_path, const char* runtime_root,
+                             const char* requests_path, const char* output_path) {
+    const trtmc::BundleReader bundle(bundle_path);
+    if (bundle.info().family != "qwen3_8" || !bundle.find_section("edge_llm.json"))
+        throw std::invalid_argument("Expected a qwen3_8 Edge bundle");
+    auto model = trtmc::Model::load(bundle_path, {runtime_root});
+    std::ifstream input(requests_path);
+    const auto requests = nlohmann::json::parse(input);
+    if (!requests.is_array() || requests.empty())
+        throw std::invalid_argument("Expected a nonempty request array");
+    auto report = nlohmann::json::array();
+    bool passed = true;
+    for (const auto& request : requests) {
+        nlohmann::json row{{"id", request.at("id")}};
+        try {
+            const auto maximum = request.value("max_new_tokens", 128);
+            const trtmc::Config config{
+                {"max_new_tokens", std::int64_t{maximum}},
+                {"temperature", 0.0},
+                {"top_k", std::int64_t{1}},
+                {"top_p", 1.0},
+                {"seed", request.value("seed", std::int64_t{-1})},
+                {"use_chat_template", request.value("use_chat_template", true)},
+                {"enable_thinking", request.value("enable_thinking", false)}};
+            // Own pixels through synchronous run; descriptors only borrow them.
+            std::deque<std::vector<std::uint8_t>> pixels;
+            auto image = [&](const nlohmann::json& frame) {
+                std::ifstream file(frame.at("rgb_path").get<std::string>(), std::ios::binary);
+                if (!file)
+                    throw std::invalid_argument("Cannot open RGB fixture");
+                pixels.emplace_back(std::istreambuf_iterator<char>(file),
+                                    std::istreambuf_iterator<char>());
+                return trtmc::ImageInput{{pixels.back().data(), pixels.back().size()},
+                                         frame.at("height").get<std::uint32_t>(),
+                                         frame.at("width").get<std::uint32_t>()};
+            };
+            auto video = [&](const nlohmann::json& value) {
+                trtmc::VideoInput result;
+                for (const auto& frame : value.at("frames"))
+                    result.frames.push_back(image(frame));
+                result.timestamps_seconds =
+                    value.value("timestamps_seconds", std::vector<double>{});
+                return result;
+            };
+            const auto prompt = request.at("prompt").get<std::string>();
+            auto run = [&]() -> trtmc::TextContinuationResult {
+                const auto task = request.at("task").get<std::string>();
+                if (task == "text_continuation")
+                    return model.task<trtmc::TextContinuation>().run({prompt}, config);
+                if (task == "images_text_to_text") {
+                    std::vector<trtmc::ImagesTextPart> parts;
+                    for (const auto& frame : request.at("images"))
+                        parts.emplace_back(image(frame));
+                    parts.emplace_back(trtmc::TextPart{prompt});
+                    return model.task<trtmc::ImagesTextToText>().run(
+                        trtmc::ImagesTextToTextRequest::from_parts(std::move(parts)), config);
+                }
+                if (task == "video_text_to_text")
+                    return model.task<trtmc::VideoTextToText>().run(
+                        trtmc::VideoTextToTextRequest::from_parts(
+                            {video(request.at("video")), trtmc::TextPart{prompt}}),
+                        config);
+                if (task == "image_video_text_to_text")
+                    return model.task<trtmc::ImageVideoTextToText>().run(
+                        trtmc::ImageVideoTextToTextRequest::from_parts({image(request.at("image")),
+                                                                        video(request.at("video")),
+                                                                        trtmc::TextPart{prompt}}),
+                        config);
+                throw std::invalid_argument("Unknown typed request task");
+            };
+            const auto result = run();
+            const auto ids = result.token_ids();
+            if (result.text().empty() || ids.empty() ||
+                ids.size() > static_cast<std::size_t>(maximum))
+                throw std::runtime_error("Generation returned an invalid text/token result");
+            row["text"] = std::string(result.text());
+            row["token_ids"] = std::vector<std::int32_t>(ids.begin(), ids.end());
+            if (request.contains("expect_error")) {
+                row["unexpected_success"] = true;
+                passed = false;
+            }
+        } catch (const std::exception& error) {
+            row["error"] = error.what();
+            row["expected_error"] =
+                request.contains("expect_error") &&
+                std::string(error.what()).find(request.at("expect_error").get<std::string>()) !=
+                    std::string::npos;
+            passed = passed && row["expected_error"].get<bool>();
+        }
+        report.push_back(std::move(row));
+        std::ofstream(output_path) << report.dump(2) << '\n';
+    }
+    return passed ? 0 : 1;
+}
+
+int main(int argc, char** argv) {
+    if (argc != 1) {
+        if (argc != 5) {
+            std::cerr << "Usage: pipeline_test [BUNDLE RUNTIME_ROOT REQUESTS_JSON OUTPUT_JSON]\n";
+            return 2;
+        }
+        try {
+            return test_typed_bundle(argv[1], argv[2], argv[3], argv[4]);
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << std::endl;
+            return 1;
+        }
+    }
     int device_count = 0;
     if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count == 0)
         return 77;
