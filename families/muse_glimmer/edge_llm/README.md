@@ -28,7 +28,7 @@ The base is `RadixArk/Muse-Glimmer-NVFP4`, revision
 | DFlash V1 | `meta-models/Muse-Glimmer-30B-assistant` |
 | DFlash V2 | `incoai/Muse-Glimmer-30B-DFlash2` |
 
-Both companions use the documented public `dflash` mode and block size16;
+Both companions use the documented public `dflash` mode and block size 16;
 their checkpoint architecture selects the version. Family-owned arguments are
 declared through the existing CLI protocol:
 
@@ -43,7 +43,7 @@ trtmc muse_glimmer build /models/muse-nvfp4 \
   --companion /models/matched-muse-draft
 ```
 
-The recorded profile is TP1/batch1/input512/KV1024, with a full block16
+The recorded profile is TP1/batch1/input512/KV1024, with a full block size 16
 verification profile for paired execution. Both base and draft must build;
 a failed pair is never replaced by an autoregressive bundle. DFlash V1 requires
 greedy generation. DFlash V2 does not add the V1 greedy-only restriction; local paired
