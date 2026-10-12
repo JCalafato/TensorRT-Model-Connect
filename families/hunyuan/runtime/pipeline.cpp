@@ -80,7 +80,7 @@ static std::vector<int32_t> encode_prompt(const ITokenizer& tokenizer,
                                           const TextGenerationConfig& cfg) {
     std::string effective = prompt;
     bool templated = false;
-    if (cfg.use_chat_template && !config.chat_template_format.empty()) {
+    if (cfg.use_chat_template) {
         effective =
             hunyuan_apply_chat_template(config.chat_template_format, prompt, cfg.enable_thinking);
         templated = true;
@@ -255,6 +255,7 @@ HunyuanTextGenerationPipeline::TimedGenResult HunyuanTextGenerationPipeline::gen
     if (max_new_tokens == 0 || input_ids.empty())
         return TimedGenResult{input_ids, 0.0, 0.0};
 
+    hunyuan_validate_native_capacity(input_ids.size(), max_new_tokens, state_->max_length());
     const std::string mode = resolve_generation_mode(cfg);
     if (mode != "ar")
         throw std::runtime_error("HunyuanTextGenerationPipeline: unsupported generation mode '" +

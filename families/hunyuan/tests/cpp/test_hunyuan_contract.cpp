@@ -27,6 +27,45 @@ void rejects(F action) {
     throw std::runtime_error("Hunyuan invalid request was accepted");
 }
 
+void test_native_contracts() {
+    using trtmc::hunyuan_validate_native_capacity;
+    hunyuan_validate_native_capacity(127, 2, 128);
+    hunyuan_validate_native_capacity(128, 1, 128);
+    rejects([] { hunyuan_validate_native_capacity(128, 2, 128); });
+    rejects([] { hunyuan_validate_native_capacity(129, 1, 128); });
+    rejects([] { hunyuan_validate_native_capacity(static_cast<std::size_t>(-1), 1, 128); });
+    rejects([] { hunyuan_validate_native_capacity(1, -1, 128); });
+    require(trtmc::hunyuan_detect_chat_template_format("").empty());
+    rejects([] { trtmc::hunyuan_apply_chat_template("", "raw", false); });
+    for (char32_t cp : {0x85, 0x1680, 0x2001, 0x2009, 0x2028, 0x2029, 0x202F, 0x205F})
+        require(trtmc::hunyuan_is_whitespace(cp));
+    for (char32_t cp : {0x180E, 0x200B, 0x2060, 0xFEFF})
+        require(!trtmc::hunyuan_is_whitespace(cp));
+    nlohmann::json split = {
+        {"type", "Split"},
+        {"behavior", "Isolated"},
+        {"invert", false},
+        {"pattern",
+         {{"Regex",
+           R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+)"}}}};
+    nlohmann::json tokenizer = {
+        {"model", {{"type", "BPE"}, {"vocab", {{"a", 0}}}, {"merges", nlohmann::json::array()}}},
+        {"pre_tokenizer", {{"type", "Sequence"}, {"pretokenizers", {split}}}}};
+    auto create = [&] {
+        const auto data = tokenizer.dump();
+        return trtmc::CreateBpeTokenizer(data.data(), data.size());
+    };
+    require(create()->encode("a") == std::vector<std::int32_t>{0});
+    tokenizer["pre_tokenizer"]["pretokenizers"].push_back(split);
+    rejects([&] { create(); });
+    tokenizer["pre_tokenizer"]["pretokenizers"] = {split};
+    tokenizer["pre_tokenizer"]["pretokenizers"][0]["pattern"]["Regex"] = "unrecognized";
+    rejects([&] { create(); });
+    tokenizer["pre_tokenizer"]["pretokenizers"] = {split};
+    tokenizer["pre_tokenizer"]["pretokenizers"][0]["invert"] = true;
+    rejects([&] { create(); });
+}
+
 void test_mt2_preprocessing() {
     using trtmc::hunyuan::edge_llm::make_mt2_pre_tokenizer;
     const auto config = nlohmann::json::parse(R"json({
@@ -171,6 +210,7 @@ void test_mt2_preprocessing() {
 int main() {
     using namespace trtmc::hunyuan::edge_llm;
     try {
+        test_native_contracts();
         test_mt2_preprocessing();
         require(safe_artifact_path("edge_llm/engine/llm.engine"));
         require(!safe_artifact_path("edge_llm/engine/../escape"));

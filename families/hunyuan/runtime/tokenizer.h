@@ -13,6 +13,13 @@
 
 namespace trtmc {
 
+// Unicode White_Space used by the tokenizer's regex \s alternatives.
+inline bool hunyuan_is_whitespace(char32_t cp) {
+    return (cp >= 0x09 && cp <= 0x0D) || cp == 0x20 || cp == 0x85 || cp == 0xA0 || cp == 0x1680 ||
+           (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 || cp == 0x2029 || cp == 0x202F ||
+           cp == 0x205F || cp == 0x3000;
+}
+
 class ITokenizer {
   public:
     virtual ~ITokenizer() = default;

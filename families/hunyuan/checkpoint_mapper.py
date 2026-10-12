@@ -214,16 +214,17 @@ def load_standard_weights(
     if _has_tensor(readers, final_norm_key):
         weights["final_norm"] = _load_tensor(readers, final_norm_key).astype(np.float32)
     else:
-        weights["final_norm"] = np.ones(hidden, dtype=np.float32)
+        raise ValueError(f"Missing required final normalization tensor: {final_norm_key}")
 
     # LM head
     if _has_tensor(readers, lm_head_key):
         weights["w_out"] = _transpose_2d(
             _load_tensor(readers, lm_head_key), "lm_head", precision=precision
         )
-    else:
-        # Tied embeddings
+    elif config.tie_word_embeddings:
         weights["w_out"] = _transpose_2d(embedding.copy(), "embedding_tied", precision=precision)
+    else:
+        raise ValueError(f"Missing required untied language-model head: {lm_head_key}")
 
     weights["_attention_size"] = attention_size  # type: ignore[assignment]
     weights["_kv_attention_size"] = kv_attention_size  # type: ignore[assignment]
