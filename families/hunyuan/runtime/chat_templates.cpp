@@ -8,6 +8,8 @@
 #include <stdexcept>
 namespace trtmc {
 std::string hunyuan_detect_chat_template_format(const std::string& value) {
+    if (value.empty())
+        return {}; // A checkpoint without a template still supports raw prompts.
     if (value.find("<｜hy_User｜>") != std::string::npos &&
         value.find("<｜hy_Assistant｜>") != std::string::npos)
         return "hunyuan_mt2";

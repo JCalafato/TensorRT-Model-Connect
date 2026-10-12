@@ -208,10 +208,7 @@ inline bool is_digit(char32_t cp) {
 }
 
 inline bool is_whitespace(char32_t cp) {
-    return cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r' || cp == 0x0B || cp == 0x0C // VT, FF
-           || cp == 0xA0                   // non-breaking space
-           || cp == 0x2000 || cp == 0x200A // en space through hair space
-           || cp == 0x3000;                // ideographic space
+    return hunyuan_is_whitespace(cp);
 }
 
 // BLOOM punctuation set: .,!?...
@@ -1210,6 +1207,8 @@ class BpeTokenizer final : public ITokenizer {
         const auto regex = split["pattern"]["Regex"].get<std::string>();
         if (is_clip_split_regex(regex))
             return classify_clip_split(split);
+        if (split.value("behavior", "") != "Isolated" || split.value("invert", false))
+            throw std::invalid_argument("Unsupported native Hunyuan Split behavior");
         if (is_qwen3_split_regex(regex)) {
             digit_group_out = parse_digit_group(regex);
             return pretok::Variant::kQwen3;
@@ -1220,7 +1219,10 @@ class BpeTokenizer final : public ITokenizer {
         if (regex.find("\\s?[A-Za-z") != std::string::npos) {
             return pretok::Variant::kDeepSeek;
         }
-        return pretok::Variant::kHunyuan;
+        if (regex ==
+            R"('s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+)")
+            return pretok::Variant::kHunyuan;
+        throw std::invalid_argument("Unsupported native Hunyuan Split regex");
     }
 
     // Detect variant from the Split inside a Sequence pre_tokenizer.
@@ -1228,14 +1230,16 @@ class BpeTokenizer final : public ITokenizer {
         digit_group_out = 0;
         if (!pt.contains("pretokenizers"))
             return pretok::Variant::kHunyuan;
-        for (auto& sub : pt["pretokenizers"]) {
-            if (sub.value("type", "") != "Split")
+        const nlohmann::json* split = nullptr;
+        for (const auto& sub : pt["pretokenizers"]) {
+            if (sub.value("type", "") == "ByteLevel")
                 continue;
-            if (!sub.contains("pattern") || !sub["pattern"].contains("Regex"))
-                continue;
-            return classify_split(sub, digit_group_out);
+            if (sub.value("type", "") != "Split" || split || !sub.contains("pattern") ||
+                !sub["pattern"].contains("Regex"))
+                throw std::invalid_argument("Unsupported native Hunyuan pre-tokenizer sequence");
+            split = &sub;
         }
-        return pretok::Variant::kHunyuan;
+        return split ? classify_split(*split, digit_group_out) : pretok::Variant::kHunyuan;
     }
 
     static bool is_space_split_pre_tokenizer(const nlohmann::json& pt, const std::string& pt_type) {

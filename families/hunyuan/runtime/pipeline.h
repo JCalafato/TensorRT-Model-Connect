@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,16 @@ inline bool hunyuan_is_eos(int32_t token, const TextGenerationConfig& request,
         return token == request.eos_token_id;
     return std::find(config.eos_token_ids.begin(), config.eos_token_ids.end(), token) !=
            config.eos_token_ids.end();
+}
+
+// The last sampled token needs no additional decoder invocation.
+inline void hunyuan_validate_native_capacity(std::size_t prompt_tokens, int32_t new_tokens,
+                                             int32_t max_length) {
+    if (new_tokens <= 0 || max_length <= 0 ||
+        prompt_tokens > static_cast<std::size_t>(max_length) ||
+        static_cast<std::size_t>(new_tokens - 1) >
+            static_cast<std::size_t>(max_length) - prompt_tokens)
+        throw std::invalid_argument("Hunyuan request exceeds the native KV cache capacity");
 }
 
 class HunyuanTextGenerationPipeline final : public ITextGeneration {

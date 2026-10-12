@@ -182,3 +182,31 @@ def test_reference_source_rejects_invalid_checkout(source, monkeypatch):
     monkeypatch.setenv("TRTMC_REFERENCE_SOURCE_DIR", source)
     with pytest.raises(ValueError, match="absolute Transformers source"):
         _reference_source()
+
+@pytest.mark.parametrize("tied", [False, True])
+def test_native_weights_require_norm_and_respect_tied_head(tmp_path, tied):
+    import numpy as np
+    from safetensors.numpy import save_file
+    from families.hunyuan.checkpoint_mapper import load_standard_weights
+
+    config = ModelConfig.from_json(json.dumps(raw_config()))
+    config = replace(config, hidden_size=2, vocab_size=3, num_hidden_layers=0,
+                     tie_word_embeddings=tied)
+    tensors = {"model.embed_tokens.weight": np.arange(6, dtype=np.float32).reshape(3, 2)}
+    checkpoint = tmp_path / "model.safetensors"
+    save_file(tensors, checkpoint)
+    with pytest.raises(ValueError, match="final normalization"):
+        load_standard_weights(tmp_path, config)
+    tensors["model.norm.weight"] = np.ones(2, dtype=np.float32)
+    save_file(tensors, checkpoint)
+    if tied:
+        weights = load_standard_weights(tmp_path, config)
+        np.testing.assert_array_equal(weights["w_out"], tensors["model.embed_tokens.weight"].T)
+    else:
+        with pytest.raises(ValueError, match="untied language-model head"):
+            load_standard_weights(tmp_path, config)
+    tensors["lm_head.weight"] = np.full((3, 2), 2, dtype=np.float32)
+    save_file(tensors, checkpoint)
+    np.testing.assert_array_equal(
+        load_standard_weights(tmp_path, config)["w_out"], tensors["lm_head.weight"].T
+    )
