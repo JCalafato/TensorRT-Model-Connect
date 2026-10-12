@@ -26,10 +26,10 @@ separate unmerged Hugging Face LANGUAGE-mode weights.
 
 | Checkpoint weights | Edge route | Native target | Build request |
 | --- | --- | --- | --- |
-| Original FP16 with vision LoRA | Experimental builder | SM80 or SM120 | FP16, TP1, batch1 |
-| ModelOpt FP8 | ONNX | SM120 | FP16 execution, TP1, batch2, context8192 |
-| ModelOpt NVFP4, with or without NVFP4 LM head | ONNX | SM120 | FP16 execution, TP1, batch2, context8192 |
-| ModelOpt W4A16-AWQ | ONNX, ALL_KERNELS SDK | SM80 | FP16 execution, TP1, batch2, context8192 |
+| Original FP16 with vision LoRA | Experimental builder | SM80 or SM120 | FP16, TP1, batch 1 |
+| ModelOpt FP8 | ONNX | SM120 | FP16 execution, TP1, batch 2, context 8192 |
+| ModelOpt NVFP4, with or without NVFP4 LM head | ONNX | SM120 | FP16 execution, TP1, batch 2, context 8192 |
+| ModelOpt W4A16-AWQ | ONNX, ALL_KERNELS SDK | SM80 | FP16 execution, TP1, batch 2, context 8192 |
 
 Use the existing `--precision fp16`, `--max-sequence-length`,
 `--max-batch-size`, and `--tensor-parallel-size` build arguments.
@@ -39,7 +39,7 @@ unsupported externalized LM-head export.
 
 Original-checkpoint image capacity is bounded by context, with a maximum of
 1280 tokens per image and a 256-token reserve for separators and prompt tokens.
-Packed routes use input7168/KV8192 and visual256..6400/per-image1280 profiles.
+Packed routes use input 7168 / KV 8192 and visual 256–6400, per image 1280 profiles.
 The runtime also validates actual expanded input plus the original generation
 budget; arbitrary prompts and images are not guaranteed to fit.
 
@@ -54,12 +54,17 @@ has no audio task adapter. Audio is not exposed by this integration.
 
 The existing image validation retains its fixture, prompt, 30-token budget,
 FP32 reference, actual-feature health check, and NED limit of 0.15. Recorded
-FP16 context8192 text output meets that limit. The context768 and context2048
+FP16 context 8192 text output meets that limit. The context 768 and context 2048
 runs and the four packed-weight configurations execute but fail that accuracy
 gate. They remain runnable for investigation; accuracy outcomes never control
-dispatch. A larger-context pass does not qualify the unchanged context768 test.
+dispatch. A larger-context pass does not qualify the unchanged context 768 test.
 
 If Edge preparation fails, diagnostics are retained and the family warns before
 retrying its native builder with the unchanged request. An incomplete Edge
 bundle is never published. Runtime inference errors are returned to the caller
 and never silently retried.
+
+Contexts below 768 tokens (including the default 256) use the native route
+without invoking Edge. Each Edge export/build subprocess has a 12-hour limit;
+a timeout retains diagnostics and follows the same native fallback path.
+Successful publication removes the temporary diagnostic log; failures retain it.

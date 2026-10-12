@@ -48,6 +48,10 @@ def mapped_request(request) -> bool:
 
 def candidate(request, raw: dict) -> bool:
     """Admit original vision-LoRA or already merged ModelOpt image checkpoints."""
+    # A short/default context cannot hold the minimum visual profile.
+    # This is a route non-match, not an upstream builder failure.
+    if type(request.max_sequence_length) is not int or request.max_sequence_length < 768:
+        return False
     vision = raw.get("vision_config") or {}
     if not isinstance(vision, dict):
         return False
@@ -166,6 +170,7 @@ def build(request, writer, native) -> None:
             # Edge preparation did not touch writer; publication cannot fallback.
             if adapter is not None:
                 edge_llm.publish(request, writer, files, marker)
+                log_path.unlink(missing_ok=True)
                 return
             log_path.unlink()  # A platform non-match is not an Edge failure.
     try:

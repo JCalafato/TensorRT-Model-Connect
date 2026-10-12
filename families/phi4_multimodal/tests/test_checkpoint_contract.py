@@ -41,6 +41,8 @@ def test_vision_loader_keeps_the_indexed_reader_collection(monkeypatch, tmp_path
     # Execution admission is independent of the owning image quality result.
     # These are the four already executed packed-image recipes, not new modes.
     from families.phi4_multimodal.edge_llm import builder, dispatch
+    from dataclasses import replace
+    from tensorrt_model_connect.build import BuildRequest
 
     monkeypatch.setattr(builder, "package_present", lambda: True)
     monkeypatch.setattr(builder, "builder_python", lambda *_a, **_k: "/python")
@@ -101,6 +103,7 @@ def test_vision_loader_keeps_the_indexed_reader_collection(monkeypatch, tmp_path
         commands, published = [], []
 
         def execute(command, **kwargs):
+            assert kwargs["timeout"] == 12 * 60 * 60
             commands.append(command)
             staging = kwargs["cwd"]
             if "tensorrt_edgellm.scripts.export" in command:
@@ -127,6 +130,7 @@ def test_vision_loader_keeps_the_indexed_reader_collection(monkeypatch, tmp_path
         monkeypatch.setattr(builder.subprocess, "run", execute)
         monkeypatch.setattr(builder, "publish", publish)
         dispatch.build(request, object(), native)
+        assert not list(tmp_path.glob(".bundle.trtmc.edge-*.log"))
         assert len(commands) == 3 and len(published) == 1
         assert ("--externalize-weights" in commands[0]) is not packed_head
         assert commands[1][-6:] == ["--maxBatchSize", "2", "--maxInputLen", "7168",
@@ -136,3 +140,44 @@ def test_vision_loader_keeps_the_indexed_reader_collection(monkeypatch, tmp_path
         assert published[0]["weight_format"] == weight_format
         assert published[0]["builder_flow"] == "onnx"
         assert published[0]["max_batch_size"] == 2
+
+    original = {**raw, "vision_lora": {"r": 256, "lora_alpha": 512}}
+    original.pop("quantization_config")
+    (source / "config.json").write_text(json.dumps(original))
+    original_request = BuildRequest(
+        source, tmp_path / "original.bundle", "phi4_multimodal",
+        "vision_language_generation", "fp16", max_sequence_length=768,
+    )
+    assert dispatch.candidate(original_request, original)
+    native_calls = []
+    monkeypatch.setattr(builder, "package_present", lambda: pytest.fail("Edge probed for a non-match"))
+    for limit in (None, 256, 767):
+        short_request = replace(original_request, max_sequence_length=limit)
+        assert not dispatch.candidate(short_request, original)
+        dispatch.build(short_request, object(), lambda request, writer: native_calls.append(request))
+        assert native_calls[-1] is short_request
+    assert not list(tmp_path.glob(".original.bundle.edge-*.log"))
+
+    monkeypatch.setattr(builder, "package_present", lambda: True)
+    target = {"os": "linux", "arch": "x86_64", "sm": 80}
+    monkeypatch.setattr(builder, "local_target", lambda: target)
+    monkeypatch.setattr(builder, "request_weight_format", lambda *_: "fp16")
+    timeout = builder.subprocess.TimeoutExpired(["edge-builder"], 12 * 60 * 60)
+    def timed_out(*_args):
+        raise timeout
+    monkeypatch.setattr(dispatch, "EDGE_DISPATCH", {("linux", "x86_64", 80, "fp16"): timed_out})
+    dispatch.build(original_request, object(), lambda request, writer: native_calls.append(request))
+    assert native_calls[-1] is original_request
+    logs = list(tmp_path.glob(".original.bundle.edge-*.log"))
+    assert len(logs) == 1 and "TimeoutExpired" in logs[0].read_text()
+    logs[0].unlink()
+
+    monkeypatch.setattr(dispatch, "EDGE_DISPATCH", {("linux", "x86_64", 80, "fp16"): lambda *_: ({}, {})})
+    def failed_publication(*_args):
+        raise RuntimeError("publication failed")
+    monkeypatch.setattr(builder, "publish", failed_publication)
+    count = len(native_calls)
+    with pytest.raises(RuntimeError, match="publication failed"):
+        dispatch.build(original_request, object(), lambda request, writer: native_calls.append(request))
+    assert len(native_calls) == count
+    assert len(list(tmp_path.glob(".original.bundle.edge-*.log"))) == 1

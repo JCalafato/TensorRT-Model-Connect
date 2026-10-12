@@ -15,10 +15,10 @@ prefix through `CMAKE_PREFIX_PATH`. A compatible Edge 0.11 Python wheel can
 supply the builder/export tools; the native C++ SDK is still required.
 Build on the target GPU rather than cross-compiling.
 
-For original checkpoints, use FP16 execution, tensor parallel size1, and batch1.
+For original checkpoints, use FP16 execution, tensor parallel size 1, and batch 1.
 The adapter applies the vision LoRA specified by the official Phi4 workflow.
 Already merged ModelOpt FP8, NVFP4, and W4A16-AWQ checkpoints use the family's
-ONNX route with batch2 and context8192. Quantized checkpoints are inputs, not
+ONNX route with batch 2 and context 8192. Quantized checkpoints are inputs, not
 automatically calibrated outputs of a Model Connect build.
 
 The runtime accepts image-to-text and raw no-image prompts. It does not expose
@@ -27,7 +27,7 @@ audio or claim a separate unmerged Hugging Face LANGUAGE-mode engine.
 ## Validation limitations
 
 The original image test and its accuracy threshold are unchanged. The
-context8192 FP16 output meets the text-quality gate; smaller-context and
+context 8192 FP16 output meets the text-quality gate; smaller-context and
 quantized configurations have recorded accuracy failures and remain runnable.
 A working build and inference call is not a claim of quality qualification.
 Audio remains blocked by the pinned builder component and task interfaces.

@@ -194,14 +194,14 @@ def validate_tokenizer(tokenizer: dict, config: dict, engine: dict | None = None
         if item.get("content") == primary
     }
     if ids != {199999}:
-        raise ValueError("Phi4 tokenizer primary EOS must preserve native199999")
+        raise ValueError("Phi4 tokenizer primary EOS must preserve native 199999")
     if engine is not None and (
         not isinstance(engine.get("eos_token_id"), list)
         or len(engine["eos_token_id"]) != 2
         or set(engine["eos_token_id"]) != {199999, 200020}
     ):
         raise ValueError(
-            "Phi4 exported EOS must match checkpoint generation tokens199999 and200020"
+            "Phi4 exported EOS must match checkpoint generation tokens 199999 and 200020"
         )
 
 
@@ -226,7 +226,7 @@ def image_token_budget(limit: int) -> int:
     """
     budget = min(1280, (limit // 256 - 1) * 256)
     if budget < 512:
-        raise ValueError("Phi4 Edge image profile needs at least768 context tokens")
+        raise ValueError("Phi4 Edge image profile needs at least 768 context tokens")
     return budget
 
 
@@ -253,7 +253,7 @@ def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path) -> 
     if type(limit) is not int or limit <= 1 or limit > config["max_position_embeddings"]:
         raise ValueError("Invalid Phi4 Edge sequence capacity")
     if onnx_flow and (limit != 8192 or request.max_batch_size != 2):
-        raise ValueError("Phi4 packed-weight ONNX profile requires context8192 and batch2")
+        raise ValueError("Phi4 packed-weight ONNX profile requires context 8192 and batch 2")
     input_limit = 7168 if onnx_flow else limit
     image_tokens = image_token_budget(limit)
     max_image_tokens = 6400 if onnx_flow else (limit // 256) * 256
@@ -340,7 +340,8 @@ def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path) -> 
             log.write(json.dumps(command) + "\n")
             log.flush()
             subprocess.run(
-                command, check=True, stdout=log, stderr=subprocess.STDOUT, cwd=staging, env=env
+                command, check=True, stdout=log, stderr=subprocess.STDOUT, cwd=staging, env=env,
+                timeout=12 * 60 * 60,
             )
     if onnx_flow:
         for name in ("config.json", "visual/config.json"):
