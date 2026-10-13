@@ -381,6 +381,8 @@ def test_native_vision_health_rejects_invalid_output(monkeypatch, tmp_path) -> N
     from families.phi4_multimodal.tests import vision_oracle
 
     runtime = tmp_path / "runtime"
+    native_build = tmp_path / "native-build"
+    monkeypatch.setenv("TRTMC_NATIVE_BUILD_DIR", str(native_build))
     monkeypatch.setenv("TRTMC_RUNTIME_ROOT", str(runtime))
     bundle = tmp_path / "model.bundle"
     marker = {"max_sequence_length": 8192, "artifacts": []}
@@ -397,7 +399,7 @@ def test_native_vision_health_rejects_invalid_output(monkeypatch, tmp_path) -> N
     def run_features(argv, *, check, timeout):
         assert check and timeout == 1800
         assert argv[0] == str(
-            runtime / "families/phi4_multimodal/phi4_multimodal_edge_vision_features"
+            native_build / "families/phi4_multimodal/phi4_multimodal_edge_vision_features"
         )
         assert argv[3] == str(runtime / "libNvInfer_edgellm_plugin.so")
         assert argv[5:8] == ["2", "3", "8192"]

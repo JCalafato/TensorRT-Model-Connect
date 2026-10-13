@@ -40,5 +40,7 @@ if(TRTMC_BUILD_TESTS AND TARGET EdgeLLM::Core)
     CUDA_ARCHITECTURES "${EdgeLLM_CUDA_ARCHITECTURE}"
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/families/phi4_multimodal"
   )
+  add_dependencies(trtmc_model_phi4_multimodal phi4_multimodal_edge_vision_features)
 endif()

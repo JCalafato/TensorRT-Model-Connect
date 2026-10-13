@@ -49,6 +49,8 @@ def _bundle_section(bundle: Path, name: str, *, output: Path | None = None) -> b
 def _edge_vision_features(bundle: Path, image, marker: dict) -> np.ndarray:
     """Keep the existing health test on actual features, not generated text."""
     runtime = Path(os.environ["TRTMC_RUNTIME_ROOT"])
+    helper_root = Path(os.environ.get("TRTMC_NATIVE_BUILD_DIR", runtime))
+    helper = helper_root / "families/phi4_multimodal/phi4_multimodal_edge_vision_features"
     with tempfile.TemporaryDirectory(prefix="phi4_multimodal-vision-") as temporary:
         root = Path(temporary)
         for name in marker["artifacts"]:
@@ -70,7 +72,7 @@ def _edge_vision_features(bundle: Path, image, marker: dict) -> np.ndarray:
         features = root / "features.fp16"
         subprocess.run(
             [
-                str(runtime / "families/phi4_multimodal/phi4_multimodal_edge_vision_features"),
+                str(helper),
                 str(root / "edge_llm/engine"),
                 str(root / "edge_llm/checkpoint"),
                 str(runtime / "libNvInfer_edgellm_plugin.so"),
