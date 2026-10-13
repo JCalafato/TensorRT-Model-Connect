@@ -20,6 +20,18 @@ from .builder import EDGE_REVISION, installed_package, local_target
 
 _LOG = logging.getLogger(__name__)
 
+_PUBLISHED_NVFP4_CONFIG_GROUPS = {
+    "group_0": {
+        "input_activations": {
+            "dynamic": False, "num_bits": 4, "type": "float", "group_size": 16,
+        },
+        "weights": {
+            "dynamic": False, "num_bits": 4, "type": "float", "group_size": 16,
+        },
+        "targets": ["Linear"],
+    },
+}
+
 
 def checkpoint_quantization(raw: dict, source: Path, target: dict) -> str | None:
     """Admit original weights or the published Gemma4 MoE NVFP4 layout.
@@ -43,6 +55,7 @@ def checkpoint_quantization(raw: dict, source: Path, target: dict) -> str | None
             or (text.get("hidden_size"), text.get("num_hidden_layers"),
                 text.get("num_experts"), text.get("top_k_experts")) != (2816, 30, 128, 8)
             or quant.get("quant_method") != "modelopt" or quant.get("quant_algo") != "NVFP4"
+            or quant.get("config_groups") != _PUBLISHED_NVFP4_CONFIG_GROUPS
             or exported.get("quant_algo") != "NVFP4" or exported.get("group_size") != 16
             or exported.get("kv_cache_quant_algo") != "FP8"
             or quant.get("kv_cache_scheme") != {"dynamic": False, "num_bits": 8, "type": "float"}

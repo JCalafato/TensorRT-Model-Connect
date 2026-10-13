@@ -451,6 +451,12 @@ def _packed_gemma_fixture(source):
         "hidden_size": 2816, "num_hidden_layers": 30, "num_experts": 128,
         "top_k_experts": 8, "max_position_embeddings": 2048},
         "quantization_config": {"quant_method": "modelopt", "quant_algo": "NVFP4",
+                                "config_groups": {"group_0": {
+                                    "input_activations": {"dynamic": False, "num_bits": 4,
+                                                          "type": "float", "group_size": 16},
+                                    "weights": {"dynamic": False, "num_bits": 4,
+                                                "type": "float", "group_size": 16},
+                                    "targets": ["Linear"]}},
                                 "kv_cache_scheme": {"dynamic": False, "num_bits": 8, "type": "float"}}}
     quant = {"quantization": {"quant_algo": "NVFP4", "group_size": 16,
                               "kv_cache_quant_algo": "FP8"}}
@@ -459,7 +465,8 @@ def _packed_gemma_fixture(source):
     return raw
 
 
-@pytest.mark.parametrize("unsupported", ["sm80", "dense", "int4", "missing_sidecar", "legacy_sidecar"])
+@pytest.mark.parametrize("unsupported", ["sm80", "dense", "int4", "packing",
+                                         "missing_sidecar", "legacy_sidecar"])
 def test_standalone_packed_admission_preserves_known_boundaries(tmp_path, unsupported):
     from families.gemma.edge_llm import standalone
 
@@ -471,6 +478,8 @@ def test_standalone_packed_admission_preserves_known_boundaries(tmp_path, unsupp
         raw["text_config"]["enable_moe_block"] = False
     elif unsupported == "int4":
         raw["quantization_config"]["quant_algo"] = "INT4_AWQ"
+    elif unsupported == "packing":
+        raw["quantization_config"]["config_groups"]["group_0"]["weights"]["group_size"] = 32
     elif unsupported == "missing_sidecar":
         (tmp_path / "hf_quant_config.json").unlink()
     else:
