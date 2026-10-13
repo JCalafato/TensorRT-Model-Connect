@@ -401,7 +401,9 @@ def test_native_vision_health_rejects_invalid_output(monkeypatch, tmp_path) -> N
         assert argv[0] == str(
             native_build / "families/phi4_multimodal/phi4_multimodal_edge_vision_features"
         )
-        assert argv[3] == str(runtime / "libNvInfer_edgellm_plugin.so")
+        assert argv[3] == str(
+            native_build / "families/phi4_multimodal/libNvInfer_edgellm_plugin.so"
+        )
         assert argv[5:8] == ["2", "3", "8192"]
         assert Path(argv[4]).read_bytes() == bytes([255, 0, 0]) * 6
         np.asarray([1.0, -2.0], dtype=np.float16).tofile(argv[8])

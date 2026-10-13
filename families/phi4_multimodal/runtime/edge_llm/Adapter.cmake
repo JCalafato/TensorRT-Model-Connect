@@ -42,5 +42,11 @@ if(TRTMC_BUILD_TESTS AND TARGET EdgeLLM::Core)
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/families/phi4_multimodal"
   )
+  add_custom_command(TARGET phi4_multimodal_edge_vision_features POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:EdgeLLM::Plugin>"
+      "$<TARGET_FILE_DIR:phi4_multimodal_edge_vision_features>/libNvInfer_edgellm_plugin.so"
+    VERBATIM
+  )
   add_dependencies(trtmc_model_phi4_multimodal phi4_multimodal_edge_vision_features)
 endif()
