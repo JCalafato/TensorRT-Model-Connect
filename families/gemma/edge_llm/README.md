@@ -32,14 +32,18 @@ CLI protocol from #1310, not new shared flags or hooks. Python callers use
 `GemmaBuildRequest`, `BuildExecutionInputs` and `NamedCheckpoint` from this
 family's `edge_llm.config` with the unchanged public build API.
 
-Standalone builds use original FP16 weights, TP1 and batch1. They expose text
+Standalone builds use FP16 compute, TP1 and batch1. Original checkpoints retain
+their unquantized weights. The published 26B-A4B ModelOpt NVFP4 checkpoint also
+keeps its packed weights and FP8 KV cache on native SM12x; no calibration or
+quantization conversion is performed. They expose text
 continuation and the image/audio tasks supported by the checkpoint's towers.
 The runtime preserves ordered typed media and delegates preprocessing to Edge;
 images are host RGB8 or normalized RGB float, and audio is mono 16 kHz float
 PCM. Unsupported content, generation options and unmapped build overrides are
 rejected rather than silently discarded. Paired builds are text-only and mapped
-to native Linux x86_64 SM80. Quantized Gemma4 checkpoints are not admitted by
-this change.
+to native Linux x86_64 SM80. Other packed layouts and quantized companion pairs are not admitted by
+this change. Each standalone build resolves only its actual media towers, using
+the installed SDK's declared visual/audio executable paths.
 
 The builder packages validated engines, tokenizer/chat-template files and
 required ordinary/per-layer embeddings. It does not duplicate original weights
@@ -81,8 +85,8 @@ reference; speculative-activity checks distinguish actual draft execution from
 fallback. Quality failures remain runnable and remain failures against the
 unchanged owning criteria. This table does not qualify every prompt, media
 shape, context length, platform, combined image/audio request or generation
-policy. Larger 26B/31B variants, their assistants and packed-weight modes are
-not established by these smaller-model results.
+policy. Original-weight 26B/31B variants and their assistants are not established by
+these smaller-model results.
 
 ## Sampling and capacity
 
@@ -97,3 +101,26 @@ For media, Edge performs preprocessing before it can count expanded input
 positions, so the adapter conservatively reserves the whole input profile plus
 lookahead. The upstream runtime rejects media beyond that profile. Unsupported
 options or insufficient capacity are errors, not ignored requests.
+
+## Published 26B-A4B NVFP4 standalone route
+
+```sh
+trtmc gemma build /path/to/Gemma-4-26B-A4B-NVFP4 --precision fp16 \
+  --task images_text_to_text --max-sequence-length 2048 -o gemma-nvfp4.bundle
+```
+
+The published checkpoint revision
+`a19cfe00be84568a6867111c9a68c9c44fdcffe6` was built through Model Connect with
+the original Edge 0.11 ONNX exporter and native SM120 text/visual builders.
+Public Model Connect text and image commands completed. Direct Edge completed
+the same-engine text and both original image fixtures, using 128 greedy tokens.
+The unchanged upstream ROUGE-1/ROUGE-L gates (0.25/0.20) passed: text
+0.3468/0.2197 and image 0.5825/0.3089.
+
+**Quality remains unqualified:** Model Connect and direct Edge text and image outputs diverged
+despite matching inspected greedy/thinking settings. The independent owning
+HF FP32 NED comparison was not run because the installed reference loader does not
+recognize this checkpoint's ModelOpt quantizer. Upstream ROUGE does not replace
+that gate or resolve the divergence. These are executable requests, so the
+adapter does not disable them for a quality failure. This evidence does not
+qualify the 31B packed target, speculative companions, or other platforms.

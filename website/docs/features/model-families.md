@@ -66,7 +66,14 @@ long-context qualification remain outside this contract. The
 committed-token-per-forward receipt is an algorithmic diagnostic, not a
 wall-clock speedup claim.
 
-### Gemma4 paired ONNX execution
+### Gemma4 Edge ONNX execution
+
+Standalone Gemma4 text/media offload also maps the published 26B-A4B NVFP4
+checkpoint on native SM12x, preserving its FP8 KV cache without calibration.
+Its build and text/image commands execute, but recorded MC/direct text/image
+divergence and an unavailable independent FP32 reference prevent an accuracy
+qualification claim. See the [owning Gemma adapter notes](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/gemma/edge_llm/README.md)
+for exact boundaries; quality failures do not disable executable requests.
 
 Use `trtmc gemma build MODEL -o model.bundle` with the owning
 family's options. `trtmc gemma build --help` works offline without

@@ -21,8 +21,40 @@ from .builder import EDGE_REVISION, installed_package, local_target
 _LOG = logging.getLogger(__name__)
 
 
+def checkpoint_quantization(raw: dict, source: Path, target: dict) -> str | None:
+    """Admit original weights or the published Gemma4 MoE NVFP4 layout.
+
+    This forwards an already quantized checkpoint; it never calibrates weights
+    or changes its KV-cache format. Dense packed targets and packed companions
+    have separate unresolved capacity/contracts and are not admitted here.
+    """
+    text = raw.get("text_config") or {}
+    quant = raw.get("quantization_config") or text.get("quantization_config")
+    sidecar = source / "hf_quant_config.json"
+    if any((source / name).exists() for name in ("quantize_config.json", "quant_config.json")):
+        raise ValueError("Gemma4 Edge does not map this checkpoint quantization format")
+    if not quant and not sidecar.exists():
+        return None
+    if not isinstance(quant, dict) or not sidecar.is_file():
+        raise ValueError("Gemma4 NVFP4 requires matching ModelOpt config and hf_quant_config.json")
+    exported = json.loads(sidecar.read_text(encoding="utf-8")).get("quantization", {})
+    if (raw.get("model_type") != "gemma4" or text.get("model_type") != "gemma4_text"
+            or text.get("enable_moe_block") is not True
+            or (text.get("hidden_size"), text.get("num_hidden_layers"),
+                text.get("num_experts"), text.get("top_k_experts")) != (2816, 30, 128, 8)
+            or quant.get("quant_method") != "modelopt" or quant.get("quant_algo") != "NVFP4"
+            or exported.get("quant_algo") != "NVFP4" or exported.get("group_size") != 16
+            or exported.get("kv_cache_quant_algo") != "FP8"
+            or quant.get("kv_cache_scheme") != {"dynamic": False, "num_bits": 8, "type": "float"}
+            or text.get("quantization_config") not in (None, quant)):
+        raise ValueError("Gemma4 Edge maps only the published 26B-A4B ModelOpt NVFP4/FP8-KV layout")
+    if target.get("sm") not in {120, 121}:
+        raise ValueError("Gemma4 NVFP4/FP8-KV offload requires a native SM12x Edge installation")
+    return "nvfp4"
+
+
 def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path):
-    """Export the original checkpoint and build its native Edge components."""
+    """Export the checkpoint unchanged and build its native Edge components."""
     if (request.backend != "trt" or request.task not in {
             "text_generation", "text_continuation", "images_text_to_text",
             "audio_text_to_text", "image_audio_text_to_text"}
@@ -32,13 +64,9 @@ def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path):
             or request.fp32_layers or request.graph_transform is not None
             or any(value is not None for value in (request.image_height, request.image_width,
                                                    request.video_num_frames))):
-        raise ValueError("Gemma4 standalone Edge maps original FP16 text/media TP1/batch1 without build overrides")
-    if raw.get("quantization_config") or raw.get("text_config", {}).get("quantization_config"):
-        raise ValueError("This Gemma4 profile requires an unquantized checkpoint")
+        raise ValueError("Gemma4 standalone Edge maps FP16 compute, checkpoint weights, TP1/batch1 without build overrides")
     source = Path(request.model_dir).resolve()
-    if any((source / name).exists() for name in
-           ("hf_quant_config.json", "quantize_config.json", "quant_config.json")):
-        raise ValueError("This Gemma4 profile requires an unquantized checkpoint")
+    checkpoint_quant = checkpoint_quantization(raw, source, target)
     text = raw.get("text_config")
     if not isinstance(text, dict) or text.get("model_type") != raw["model_type"] + "_text":
         raise ValueError("Gemma4 standalone requires its original nested text configuration")
@@ -51,15 +79,19 @@ def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path):
         raise ValueError("Requested Gemma4 task requires a vision tower")
     if request.task in {"audio_text_to_text", "image_audio_text_to_text"} and not has_audio:
         raise ValueError("Requested Gemma4 task requires an audio tower")
-    package = installed_package(target, media=has_vision or has_audio)
+    package = installed_package(target, vision=has_vision, audio=has_audio)
     if package.get("onnx") is not True or package.get("all_native_kernels") is not True:
         raise ValueError("Gemma4 requires an ONNX-enabled full native Edge SDK")
     engine, onnx = staging / "edge_llm/engine", staging / "onnx"
     checkpoint = staging / "edge_llm/checkpoint"
     checkpoint.mkdir(parents=True)
     shutil.copy2(source / "config.json", checkpoint / "config.json")
+    additions = {"EDGELLM_PLUGIN_PATH": package["plugin"]}
+    if checkpoint_quant:
+        # The upstream exporter otherwise defaults the MoE plugin to Thor.
+        additions["EDGELLM_NVFP4_MOE_TARGET"] = "sm12x"
     env = subprocess_environment(
-        {"EDGELLM_PLUGIN_PATH": package["plugin"]},
+        additions,
         prepend_paths={"LD_LIBRARY_PATH": str(Path(package["plugin"]).parent)},
     )
     input_limit = min(limit - 2, 1024)
@@ -120,6 +152,8 @@ def prepare(request, raw: dict, target: dict, staging: Path, log_path: Path):
         "version": 1, "edge_revision": EDGE_REVISION, "target": target, "precision": "fp16",
         "max_sequence_length": limit, "max_input_length": input_limit, "max_batch_size": 1,
         "execution_variant": "autoregressive", "builder_flow": "onnx", "task": request.task,
+        "checkpoint_quantization": checkpoint_quant,
+        "kv_cache_quantization": "fp8" if checkpoint_quant else None,
         "vision": has_vision, "audio": has_audio,
         "ple": bool(text.get("hidden_size_per_layer_input", 0)), "artifacts": list(files),
     }

@@ -26,7 +26,7 @@ def local_target() -> dict:
     return detect_local_platform()
 
 
-def installed_package(target: dict, *, media: bool = False) -> dict:
+def installed_package(target: dict, *, vision: bool = False, audio: bool = False) -> dict:
     """Resolve CMake installation via standard prefixes; never install anything.
 
     Args:
@@ -54,10 +54,13 @@ def installed_package(target: dict, *, media: bool = False) -> dict:
         if cuda_version != target["cuda_version"] or package.get("tensorrt_version") != target["tensorrt_version"]:
             raise ValueError("Edge package CUDA/TensorRT differs from executing worker")
         names = ("python", "plugin") + (("onnx_builder",) if package.get("onnx") else ())
-        if media:
-            names += ("visual_builder", "audio_builder")
+        if vision:
+            names += ("visual_builder",)
+        if audio:
+            names += ("audio_builder",)
         for name in names:
-            relative = Path(package[name])
+            # CMake packages use onnx_* names; accept earlier media manifests too.
+            relative = Path(package.get(name) or package["onnx_" + name])
             path = (prefix / relative).resolve()
             if relative.is_absolute() or not path.is_relative_to(prefix.resolve()):
                 raise ValueError(f"Edge package {name} must be contained in its installation")
