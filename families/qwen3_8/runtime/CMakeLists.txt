@@ -59,6 +59,7 @@ if(TRTMC_BUILD_TESTS)
     chat_templates.cpp
     hybrid_state.cpp
     kv_cache.cpp
+    mtp_scheduler.cpp
     pipeline.cpp
     recurrent_state.cpp
     sampler.cpp
