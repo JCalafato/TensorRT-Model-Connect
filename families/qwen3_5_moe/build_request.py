@@ -81,6 +81,7 @@ def coerce_request(request: object) -> BuildRequest:
         "max_batch_size": 1,
         "context_parallel_size": 1,
         "dynamic_kv_cache": False,
+        "mtp_seq_len": None,
     }
     for name, default in unsupported.items():
         value = getattr(request, name, default)

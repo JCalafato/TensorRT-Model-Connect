@@ -73,6 +73,7 @@ def test_unspecified_preserves_named_exact_none_rejects(source, quantization):
         {"tensor_parallel_size": 2},
         {"context_parallel_size": 2},
         {"dynamic_kv_cache": True},
+        {"mtp_seq_len": 2},
         {"fp32_layers": (0,)},
         {"graph_transform": lambda *a: None},
         {"image_height": 448},

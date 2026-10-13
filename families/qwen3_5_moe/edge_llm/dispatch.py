@@ -39,9 +39,10 @@ def validate_request(request) -> None:
     if (
         request.dynamic_kv_cache
         or request.fp32_layers
+        or getattr(request, "mtp_seq_len", None) is not None
         or getattr(request, "graph_transform", None) is not None
     ):
-        raise ValueError("Unmapped dynamic KV, FP32 layer or graph callback control")
+        raise ValueError("Unmapped dynamic KV, MTP, FP32 layer or graph callback control")
     if any(
         value is not None
         for value in (request.image_height, request.image_width, request.video_num_frames)
