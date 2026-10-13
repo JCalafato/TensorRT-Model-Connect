@@ -11,6 +11,7 @@ import pytest
 from tensorrt_model_connect.build import BuildRequest
 from tensorrt_model_connect.model_support import ModelMetadata
 from families.qwen3_5_moe.edge_llm import dispatch, builder as edge_llm, precision
+from families.qwen3_5_moe.build_request import BuildRequest as FamilyBuildRequest
 from families.qwen3_5_moe import support
 
 TARGET = {
@@ -88,6 +89,17 @@ def test_unmapped_public_build_controls_fail(source, updates):
     request, _, _ = source
     with pytest.raises(ValueError):
         dispatch.validate_request(replace(request, **updates))
+
+
+def test_family_build_request_rejects_another_family(tmp_path):
+    with pytest.raises(ValueError, match="family must be 'qwen3_5_moe'"):
+        FamilyBuildRequest(
+            tmp_path,
+            tmp_path / "model.bundle",
+            "other_family",
+            "vision_language_generation",
+            "fp16",
+        )
 
 
 @pytest.mark.parametrize(

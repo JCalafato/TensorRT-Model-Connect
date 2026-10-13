@@ -45,6 +45,8 @@ class BuildRequest:
         if not self.precision:
             raise ValueError("precision must be non-empty")
         _validate_id("family", self.family)
+        if self.family != "qwen3_5_moe":
+            raise ValueError("family must be 'qwen3_5_moe'")
         _validate_id("task", self.task)
         if self.backend not in {"trt", "trt_rtx"}:
             raise ValueError("backend must be 'trt' or 'trt_rtx'")
