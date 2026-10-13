@@ -79,6 +79,7 @@ def coerce_request(request: object) -> BuildRequest:
         "context_parallel_size": 1,
         "fp32_layers": (),
         "dynamic_kv_cache": False,
+        "mtp_seq_len": None,
     }
     for name, default in unsupported.items():
         if getattr(request, name, default) != default:

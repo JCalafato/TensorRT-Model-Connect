@@ -197,6 +197,8 @@ def test_prepare_maps_to_wheel_exporter_and_native_onnx_builder(
 
     legacy = coerce_request(request)
     assert legacy.execution_variant == "autoregressive" and legacy.companion is None
+    with pytest.raises(NotImplementedError, match="mtp_seq_len"):
+        coerce_request(replace(request, mtp_seq_len=2))
     with pytest.raises(ValueError, match="requires exactly one companion"):
         replace(legacy, execution_variant="dflash")
 
