@@ -93,12 +93,49 @@ inline edge::imageUtils::ImageData image_buffer(const api::ImageView& image) {
     return edge::imageUtils::ImageData(std::move(tensor));
 }
 
-/// Preserve the order of image and text parts in the provider messages.
-inline edge::LLMGenerationRequest media_request(const api::ImagesTextToTextRequest& input,
-                                                const TextGenerationConfig& config,
-                                                int default_length) {
-    if (!input.tools.empty() || input.messages.empty())
-        throw std::invalid_argument("Qwen3.5 image requests require messages and do not map tools");
+/// Pack ordered RGB frames without substituting independent images for a video.
+inline edge::imageUtils::ImageData video_buffer(const api::VideoView& video) {
+    const auto count = video.frames.size();
+    if (count == 0 || count > INT32_MAX ||
+        (!video.timestamps_seconds.empty() && video.timestamps_seconds.size() != count))
+        throw std::invalid_argument("Qwen3.5 video needs frames and matching timestamps");
+    for (std::size_t i = 0; i < video.timestamps_seconds.size(); ++i)
+        if (!std::isfinite(video.timestamps_seconds[i]) ||
+            (i && video.timestamps_seconds[i] < video.timestamps_seconds[i - 1]))
+            throw std::invalid_argument("Qwen3.5 video timestamps must be finite and ordered");
+    auto first = image_buffer(video.frames[0]);
+    const auto stride = static_cast<std::size_t>(first.height) * first.width * 3;
+    if (count > static_cast<std::size_t>(INT64_MAX) / stride)
+        throw std::invalid_argument("Qwen3.5 video dimensions overflow");
+    edge::Tensor tensor({static_cast<int64_t>(count), first.height, first.width, 3},
+                        edge::DeviceType::kCPU, nvinfer1::DataType::kUINT8);
+    auto* output = tensor.dataPointer<std::uint8_t>();
+    std::memcpy(output, first.data(), stride);
+    for (std::size_t i = 1; i < count; ++i) {
+        if (video.frames[i].height != video.frames[0].height ||
+            video.frames[i].width != video.frames[0].width)
+            throw std::invalid_argument("Qwen3.5 video frames must have matching dimensions");
+        auto frame = image_buffer(video.frames[i]);
+        std::memcpy(output + i * stride, frame.data(), stride);
+    }
+    edge::imageUtils::ImageData result(std::move(tensor));
+    result.isVideo = true;
+    // Unspecified timing follows the official frame-list default of one FPS.
+    result.fps = 1.0;
+    result.timestamps.assign(video.timestamps_seconds.begin(), video.timestamps_seconds.end());
+    return result;
+}
+
+/// Preserve image, video and text order in the provider messages.
+template <class Request>
+inline edge::LLMGenerationRequest
+media_request(const Request& input, const TextGenerationConfig& config, int default_length) {
+    if constexpr (!std::is_same_v<Request, api::ImageVideoTextToTextRequest>) {
+        if (!input.tools.empty())
+            throw std::invalid_argument("Qwen3.5 media does not map tools");
+    }
+    if (input.messages.empty())
+        throw std::invalid_argument("Qwen3.5 media requires messages");
     auto request = make_request("", config, default_length, true);
     auto& item = request.requests.front();
     item.messages.clear();
@@ -129,6 +166,9 @@ inline edge::LLMGenerationRequest media_request(const api::ImagesTextToTextReque
                     } else if constexpr (std::is_same_v<T, api::ImageView>) {
                         item.imageBuffers.push_back(image_buffer(value));
                         message.contents.push_back({"image", ""});
+                    } else if constexpr (std::is_same_v<T, api::VideoView>) {
+                        item.imageBuffers.push_back(video_buffer(value));
+                        message.contents.push_back({"video", ""});
                     } else {
                         throw std::invalid_argument(
                             "Qwen3.5 media does not map tool or reasoning parts");

@@ -47,7 +47,7 @@ command mappings, not locally executed or accuracy-qualified results.
 Results belong to individual checkpoints, profiles and requests. Accuracy-only
 failures remain executable; they do not become passing results.
 
-Qwen3 and older, MoE, Qwen3.6/3.8, video, unknown quantization metadata,
+Qwen3 and older, MoE, Qwen3.6/3.8, unknown quantization metadata,
 unsupported component combinations, and speculative TP2 are outside this owner.
 The separate Qwen owners must establish their own support.
 
@@ -81,7 +81,30 @@ trtmc run qwen35-image.bundle --image /images/dog.jpg \
 ```
 
 The source image-token profile is 128–1280 per image, bounded by the aggregate
-visual capacity. Image examples are not video or arbitrary-resolution claims.
+visual capacity. Image examples do not qualify arbitrary resolutions.
+
+### Typed video requests
+
+Visual bundles also expose the existing native `VideoTextToText` and
+`ImageVideoTextToText` APIs. Pass decoded, ordered RGB frames in `VideoView`;
+frames must share dimensions. Optional timestamps must be finite, nondecreasing
+and match the frame count. Without timestamps, the owning Edge mapping uses
+one frame per second. The adapter preserves video identity and mixed-content
+order rather than converting a video into independent image requests.
+
+Build the same `vision_language_generation` bundle shown above. Use the typed
+C++/C API for video input; the generic `trtmc run --image` option is not a video
+interface, and no shared CLI option is added. Text-only bundles do not expose
+the video tasks. Edge retains responsibility for preprocessing, temporal patches
+and the provider template; existing visual and context capacity limits apply.
+
+Local evidence: original Qwen3.5-2B, FP16, TP1, context8192, two identical frames
+from the existing car fixture. Model Connect and direct Edge returned identical
+text, `white`; independent FP32 HF comparison passed the unchanged NED0.15
+gate with NED0.0. This validates video transport and appearance, not motion
+understanding, every checkpoint, or speculative video accuracy. Native owning
+regressions additionally check distinct-frame ordering, mixed image/video
+messages, timestamp preservation and malformed-input rejection.
 
 ### Speculative execution
 

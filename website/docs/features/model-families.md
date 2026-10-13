@@ -215,9 +215,15 @@ Compatible PyPI Python tools are discovered automatically, with the source-built
 SDK interpreter as fallback; a matching native C++ SDK is still required.
 Execution admission is not a blanket accuracy claim: recorded quality-only
 failures remain runnable and existing gates are unchanged. Qwen3 or older,
-MoE, Qwen3.6/3.8, video and speculative TP2 are outside this owner.
+MoE, Qwen3.6/3.8 and speculative TP2 are outside this owner.
 See the [family recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_5/edge_llm/README.md)
 for commands, paired execution, validation boundaries and known quality issues.
+
+Visual bundles expose the existing typed video and mixed image/video APIs;
+decoded frame order and optional timestamps are preserved. The recorded 2B
+two-frame appearance case passed Model Connect/direct parity and independent
+FP32 NED0.0; it is not a motion-quality or all-configuration qualification.
+The generic image CLI is unchanged. See the owning recipe for API boundaries.
 
 ## Optional Llama Edge execution
 

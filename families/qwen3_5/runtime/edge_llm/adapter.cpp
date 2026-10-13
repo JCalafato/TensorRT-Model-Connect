@@ -226,7 +226,9 @@ class EdgeTask final : public ITextGeneration,
                        public IVisionLanguageGeneration,
                        public api::IModel,
                        public api::ITextContinuation,
-                       public api::IImagesTextToText {
+                       public api::IImagesTextToText,
+                       public api::IVideoTextToText,
+                       public api::IImageVideoTextToText {
   public:
     EdgeTask(const BundleReader& bundle, const nlohmann::json& marker)
         : artifacts_(bundle, marker), plugin_(load_plugin()),
@@ -241,8 +243,11 @@ class EdgeTask final : public ITextGeneration,
     std::vector<api::TaskInstance> task_bindings() override {
         std::vector<api::TaskInstance> bindings{
             api::bind<api::ITextContinuation>(*this, fields(false))};
-        if (visual_)
+        if (visual_) {
             bindings.push_back(api::bind<api::IImagesTextToText>(*this, fields(true)));
+            bindings.push_back(api::bind<api::IVideoTextToText>(*this, fields(true)));
+            bindings.push_back(api::bind<api::IImageVideoTextToText>(*this, fields(true)));
+        }
         return bindings;
     }
 
@@ -255,6 +260,23 @@ class EdgeTask final : public ITextGeneration,
     }
 
     TextResult run(const api::ImagesTextToTextRequest& input, api::ConfigView supplied) override {
+        if (!visual_)
+            throw std::invalid_argument("Qwen3.5 text bundle has no visual engine");
+        return execute(media_request(input,
+                                     generation_config(supplied, true, default_max_new_tokens()),
+                                     default_max_new_tokens()));
+    }
+
+    TextResult run(const api::VideoTextToTextRequest& input, api::ConfigView supplied) override {
+        if (!visual_)
+            throw std::invalid_argument("Qwen3.5 text bundle has no visual engine");
+        return execute(media_request(input,
+                                     generation_config(supplied, true, default_max_new_tokens()),
+                                     default_max_new_tokens()));
+    }
+
+    TextResult run(const api::ImageVideoTextToTextRequest& input,
+                   api::ConfigView supplied) override {
         if (!visual_)
             throw std::invalid_argument("Qwen3.5 text bundle has no visual engine");
         return execute(media_request(input,
