@@ -50,10 +50,14 @@ def test_missing_native_checkpoint_does_not_fall_back_to_nemo(tmp_path):
         build(req, BundleWriter(req.output_path))
 
 
-def test_dynamic_kv_cache_is_explicitly_unsupported(tmp_path):
+@pytest.mark.parametrize(("option", "value"), [
+    ("dynamic_kv_cache", True),
+    ("mtp_seq_len", 2),
+])
+def test_unsupported_execution_modes_fail_before_checkpoint_loading(tmp_path, option, value):
     build = importlib.import_module("families.parakeet_tdt.model").build
-    req = request(tmp_path, dynamic_kv_cache=True)
-    with pytest.raises(NotImplementedError, match="does not support dynamic_kv_cache"):
+    req = request(tmp_path, **{option: value})
+    with pytest.raises(NotImplementedError, match=f"does not support {option}"):
         build(req, BundleWriter(req.output_path))
 
 

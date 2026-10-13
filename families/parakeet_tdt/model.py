@@ -9,6 +9,8 @@ from .config import ParakeetTDTConfig
 
 
 def build(request, writer):
+    if request.mtp_seq_len is not None:
+        raise NotImplementedError("parakeet_tdt does not support mtp_seq_len")
     if request.dynamic_kv_cache:
         raise NotImplementedError("parakeet_tdt does not support dynamic_kv_cache")
     required = (
