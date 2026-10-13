@@ -99,3 +99,13 @@ these exact pins and the dependencies for both environments. The kernel-only
 environment and its dependency report remain under the dependency build root.
 CUDA 13 provisioning requires Python 3.10-3.13 because of the pinned NumPy wheel support.
 The selected Python wheel and imported TensorRT version must match the exact native SDK header/library version; an ABI-compatible wheel from another release is rejected.
+
+### Native media tools
+
+With `TRTMC_EDGELLM_ONNX=ON`, provisioning also builds and installs the
+upstream visual and audio component builders as `edgellm-onnx-visual-build`
+and `edgellm-onnx-audio-build`. The package manifest exposes their
+`onnx_visual_builder` and `onnx_audio_builder` paths, with
+`visual_builder` and `audio_builder` aliases for existing family consumers.
+Families decide which checkpoint towers to build; provisioning adds no model
+selection or runtime dispatch. The original Edge source pin is unchanged.

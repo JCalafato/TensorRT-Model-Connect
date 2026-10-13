@@ -41,8 +41,11 @@ endif()
 set(_edge_build_targets edgellmCore NvInfer_edgellm_plugin)
 set(_edge_onnx_byproducts "")
 if(TRTMC_EDGELLM_ONNX)
-  list(APPEND _edge_build_targets llm_build)
-  list(APPEND _edge_onnx_byproducts "${CMAKE_BINARY_DIR}/_deps/edgellm/install/bin/edgellm-onnx-build")
+  list(APPEND _edge_build_targets llm_build visual_build audio_build)
+  list(APPEND _edge_onnx_byproducts
+    "${CMAKE_BINARY_DIR}/_deps/edgellm/install/bin/edgellm-onnx-build"
+    "${CMAKE_BINARY_DIR}/_deps/edgellm/install/bin/edgellm-onnx-visual-build"
+    "${CMAKE_BINARY_DIR}/_deps/edgellm/install/bin/edgellm-onnx-audio-build")
 endif()
 set(_edge_version "0.11.0")
 set(_edge_revision "95515c2f87fba8982db5a519f9022277667b3cc9")
