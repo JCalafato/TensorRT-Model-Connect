@@ -10,6 +10,7 @@ import pytest
 
 from tensorrt_model_connect.build import BuildRequest
 from tensorrt_model_connect.model_support import ModelMetadata, resolve_family
+from families.hunyuan import model
 from families.hunyuan.config import ModelConfig
 from families.hunyuan.edge_llm import builder, dispatch
 
@@ -107,6 +108,13 @@ def test_non_candidate_uses_native_without_probe(request_and_route, monkeypatch,
     calls = []
     dispatch.build(request, object(), lambda *args: calls.append(args[0]))
     assert calls == [request]
+
+
+def test_shared_mtp_request_is_rejected_by_family(request_and_route):
+    request, _ = request_and_route
+    request = replace(request, mtp_seq_len=2)
+    with pytest.raises(NotImplementedError, match="does not support MTP"):
+        model.build(request, object())
 
 
 def test_compatible_wheel_selected_and_source_python_is_fallback(monkeypatch):
