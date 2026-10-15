@@ -84,6 +84,20 @@ def add_bias_sum(
     return _cast_back_to_trt_dtype(network, s.get_output(0), inp.dtype)
 
 
+def add_logits_projection(
+    network: trt.INetworkDefinition,
+    hidden: trt.ITensor,
+    hidden_size: int,
+    vocab_size: int,
+    weights: np.ndarray,
+) -> trt.ITensor:
+    """Compute comparison-sensitive logits in FP32 before token selection."""
+    hidden = _cast_back_to_trt_dtype(network, hidden, trt.float32)
+    return add_matmul_rhs_constant(
+        network, hidden, hidden_size, vocab_size, weights, dtype=np.float32
+    )
+
+
 def add_layer_norm(
     network: trt.INetworkDefinition,
     inp: trt.ITensor,
@@ -188,7 +202,14 @@ def add_activation(
     dtype: np.dtype = np.float32,
 ) -> trt.ITensor:
     """Dispatch activation by name: 'silu', 'gelu_new', 'gelu', 'relu', 'relu2'/'squared_relu'."""
-    if activation_type in ("gelu_new", "gelu"):
+    if activation_type == "gelu":
+        output_dtype = inp.dtype
+        if output_dtype != trt.float32:
+            inp = network.add_cast(inp, trt.float32).get_output(0)
+        # Preserve GELU's sensitive negative tail before casting back to half.
+        result = network.add_activation(inp, trt.ActivationType.GELU_ERF).get_output(0)
+        return _cast_back_to_trt_dtype(network, result, output_dtype)
+    elif activation_type == "gelu_new":
         return add_gelu_new(network, inp, dtype=dtype)
     elif activation_type == "relu":
         act = network.add_activation(inp, trt.ActivationType.RELU)

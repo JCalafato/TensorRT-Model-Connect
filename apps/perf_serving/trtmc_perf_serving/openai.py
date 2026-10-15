@@ -125,6 +125,10 @@ def chat(body: Mapping[str, Any], base: Mapping[str, Any], renderer: ChatRendere
 
 def embeddings(body: Mapping[str, Any], base: Mapping[str, Any]) -> dict[str, Any]:
     _check_fields(body, {"input", "dimensions"})
+    if body.get("dimensions") is not None:
+        raise RequestError("dimensions is unsupported; the native Task returns its full vector")
+    if body.get("encoding_format", "float") != "float":
+        raise RequestError("only encoding_format=float is supported")
     value = body.get("input")
     if isinstance(value, list) and len(value) == 1:
         value = value[0]
@@ -136,11 +140,16 @@ def embeddings(body: Mapping[str, Any], base: Mapping[str, Any]) -> dict[str, An
 def ranking(body: Mapping[str, Any], base: Mapping[str, Any]) -> dict[str, Any]:
     """NIM ``/v1/ranking``: {"query": {"text"}, "passages": [{"text"}]}."""
     _check_fields(body, {"query", "passages", "truncate"})
+    if body.get("truncate", "NONE") != "NONE":
+        raise RequestError("only truncate=NONE is supported")
     try:
         query = body["query"]["text"]
         documents = [passage["text"] for passage in body["passages"]]
     except (KeyError, TypeError) as error:
         raise RequestError("ranking requires query.text and passages[].text") from error
+    if (not isinstance(query, str) or not query or not documents or
+            any(not isinstance(document, str) or not document for document in documents)):
+        raise RequestError("ranking requires non-empty query and passage strings")
     return {**base, "query": query, "documents": documents}
 
 

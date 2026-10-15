@@ -19,11 +19,20 @@ It does not use `qualification_tests/benchmark_qualification`.
 |---|---|---|
 | Execution | One workload recorder, with native and TRTMC servers running separately and speaking the same `/v1/tasks/{operation}` protocol: TRTMC (`trtmc-perf-serve --backend trtmc`, later `trtmc-server`) and the native reference (`--backend reference`: the generic adapter of the operation, or a family's own pipeline, `families/<family>/reference/adapter.py`). AIPerf sends every request. | No (adapters: per family) |
 | Task | `config/tasks.yaml`: per catalog Task, its benchmarks (`absolute`) and checks (`supplementary`), and Perf settings. | No |
-| Model | Derived from the catalog entry and its Task. `config/models/<profile>.yaml` holds only exceptions. | Only exceptions |
+| Model | Derived from the catalog entry and its Task. `families/<family>/tests/aiperf/<profile>.yaml` owns exceptions and benchmark definitions; legacy `config/models/<profile>.yaml` remains supported. | Per family |
 
 `trtmc-aiperf-qual plan` prints the derived configuration of every model; `trtmc-aiperf-qual matrix`
 writes the execution matrix (native path, environment, workloads, checks, and whether each profile is
 executable).
+
+Family definitions are merged after Task defaults and legacy overrides. They may declare local
+`benchmarks` and select them through `absolute`, so model-specific requests, native adapters and
+conversion criteria stay with their family. RT-DETR v2 keeps the bundle's fixed score threshold of
+0.3 on both sides. BiRefNet Lite compares binary foreground masks on 50 pinned COCO images against
+its official native model, using the unchanged family E2E IoU threshold of 0.90 for every image.
+This is conversion parity, not ADE20K semantic-segmentation accuracy. Acc and task-call P50 use the
+same requests. Remote-code module caches default to `hf-modules` beside the configured Hub cache;
+an explicit `HF_MODULES_CACHE` takes precedence.
 
 ### Accuracy
 
@@ -53,6 +62,15 @@ initial noise on both sides); CLIP-T and video validity for videos; MagicBrush C
 world-model video parity. The pixel parity under latent replay is reported only (`informational`).
 
 A suite with `base: catalog` overrides the profile's catalog request with its dataset fields.
+For a profile with `candidate.benchmark_sequence_length`, the build counts the prepared
+gold-suite prompts with its pinned tokenizer and uses their maximum length plus the configured
+`extra_tokens`. Qwen3-Embedding reserves one token for EOS and four for runtime tokenizer count differences.
+The evidence is written to
+`artifacts/build/benchmark-capacity.json`; request truncation and accuracy tolerances do not change.
+Dataset or tokenizer failures stop capacity planning rather than falling back to the catalog size.
+Lance uses the `Lance_3B` tokenizer subfolder and reserves its image, template, and generation tokens.
+Its Native adapter loads the pinned upstream model once and serves the same MMStar requests at the
+public Task's 448x448 image size, with image decode before timing and preparation/generation inside it.
 
 ### Verdict rules
 
@@ -72,12 +90,17 @@ A suite with `base: catalog` overrides the profile's catalog request with its da
   attempt. Low scores from successfully returned answers do not trigger precision fallback.
 - Both sides run separately with one server and concurrency 1. Legacy Acc replica, MPS, and overlap settings
   are ignored by qualification; their contended timings cannot serve as speed evidence.
-- Every AIPerf run has a deadline: three times the profile's seconds in the run's ledger (`run-all --ledger`, at
-  least ten minutes), else 12 hours; a GPU phase that fails before producing its result runs once more.
+- Every AIPerf run has a 12-hour deadline unless the environment explicitly sets `deadlines.<profile>`.
+  Scheduling ledgers only determine assignment: historical rescoring durations can omit fresh inference.
+  A GPU phase that fails before producing its result runs once more.
 - `summary` reports one result per model, worst first: White (no verdict: an error or a failed build; or no valid
   comparison: a Task without an Acc check), Red (Acc worse than
   native beyond its margin), Yellow (an Acc difference not shown either way), Green (quality passes with available
   benchmark timings). Historical fixed-workload reports retain their original performance lights.
+  Profiles excluded by the machine model list remain in `excluded.json` for audit and do not contribute
+  report rows, totals, White counts, or pass-rate denominators. A measured result from another host still counts.
+  Catalog profiles without Task test defaults remain in `plan.json` for coverage audit, outside those
+  statistics too. Invalid configurations of supported tests still appear as White errors.
 
 ### Performance
 
@@ -331,6 +354,59 @@ older passing timing. Workloads outside the recheck keep their original measurem
   retention); Docker or bare metal only differ in these paths. A run's own inputs (its ledger and multi-host
   assignment) stay with that run's results and are passed by path (`run-all --ledger`, `--assignment`).
 
+
+## Native endpoint pilot coverage
+
+The native `trtmc-server` endpoint expansion is tracked in
+[epic #1667](https://github.com/NVIDIA/TensorRT-Model-Connect/issues/1667).
+Each row qualifies only its named profile and workload; other models and load
+modes require their own evidence.
+
+| Profile | Endpoint / AIPerf type | Qualified workload | Evidence |
+| --- | --- | --- | --- |
+| `bge-small-en-v1.5` | `/v1/embeddings` / `embeddings` | One sentence per request, FP16, context 512, concurrency 1; five fixed example sentences, 5 warmups and 50 measured requests | [Stage 1](https://github.com/NVIDIA/TensorRT-Model-Connect/issues/1668) |
+| `nemotron-rerank-vl-1b-v2` | `/v1/ranking` / `nim_rankings` | One query plus two fixed text passages, FP16, context 685, concurrency 1; 5 warmups and 50 measured requests | [Stage 2](https://github.com/NVIDIA/TensorRT-Model-Connect/issues/1669) |
+| `whisper-tiny-fp16` | `/v1/audio/transcriptions` / `audio_transcription` | One complete mono PCM16 WAV clip; ten pinned LibriSpeech clips, FP16, context 128, output limit 120, concurrency 1; 5 warmups and 50 measured requests | [Stage 3](https://github.com/NVIDIA/TensorRT-Model-Connect/issues/1670) |
+
+| `yolo11n` | `/v1/infer` / `image_retrieval` | One original RGB image per request; 100 pinned COCO images, FP16, family threshold 0.25, concurrency 1; 5 warmups and 50 measured requests | [Stage 4](https://github.com/NVIDIA/TensorRT-Model-Connect/issues/1671) |
+
+The embedding pilot passed the unchanged bert family correctness checks and a
+real published AIPerf 0.13.0 run on one GB300 with TensorRT 11.1.0.106. All
+55 responses contained complete 384-value vectors.
+
+The reranking pilot passed the unchanged eagle_vlm family correctness checks
+and the same published client run configuration. All 55 responses retained
+real finite scores and original passage indices. Both pilots matched all
+client/server request IDs and timing exports. Additional epic stages remain
+planned until their native correctness and actual client runs are complete.
+
+The transcription pilot passed the existing whisper family native/reference
+testcase and benchmark WER criteria on the exact served bundle. The ten native
+transcripts matched the FP32 reference under family WER normalization; both
+had 3.59% WER against the gold corpus. All 55 published-client responses matched
+the corresponding native transcript, with complete request and timing joins.
+Audio sample rates, counts, and durations remain recorded. This stage qualifies
+recorded complete clips; streaming ASR and audio question answering remain planned.
+Whisper now honors the checkpoint GELU with an FP32 activation boundary for
+half inputs, and an FP32 encoder disables TF32 operand rounding. The decoder
+computes its comparison-sensitive output projection in FP32. Older Whisper
+bundles need rebuilding. The numerical gates remain unchanged.
+
+The detection pilot passed the unchanged yolo11 checkpoint/native/reference testcase
+and 100-image family mAP gates. Native and reference mAP@[.50:.95] were both
+about 39.5% (permitted drop: 2 percentage points). One grayscale
+image was skipped under the RGB input contract and remains in the selection audit.
+All 100 HTTP/native verification calls and 55 published-client responses preserved
+the complete boxes, native class IDs, scores, and coordinate normalization; request
+and timing joins were complete. Prepared data URLs preserve original image bytes
+through AIPerf. This qualifies object detection; document/table layout remains planned.
+
+Use [Profile Embeddings with AIPerf](../../website/docs/user-guides/profile-embeddings-with-aiperf.md),
+[Profile Reranking with AIPerf](../../website/docs/user-guides/profile-reranking-with-aiperf.md),
+[Profile Transcription with AIPerf](../../website/docs/user-guides/profile-transcription-with-aiperf.md),
+or [Profile Object Detection with AIPerf](../../website/docs/user-guides/profile-detection-with-aiperf.md)
+for the short recipes. Native Task-call wall time stays separate from client
+HTTP latency; these small runs are integration examples, not performance gates.
 
 ## Text profiling with the persistent server
 

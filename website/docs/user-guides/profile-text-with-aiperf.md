@@ -6,6 +6,9 @@ description: Benchmark an already-built TRTMC text model with the pip-installed 
 AIPerf sends requests to `trtmc-server` and reports latency and throughput.
 The server loads your TRTMC bundle and runs the model on the GPU.
 
+For sentence-to-vector workloads, see [Profile Embeddings with AIPerf](./profile-embeddings-with-aiperf.md).
+For query/passage scoring, see [Profile Reranking with AIPerf](./profile-reranking-with-aiperf.md).
+
 This example uses **Qwen3-0.6B**. Build the runtime and server using
 [Build from Source](../getting-started/source-build.md), then build the model
 using [Build a Bundle](./build-a-bundle.md). The commands below assume your

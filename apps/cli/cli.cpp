@@ -31,6 +31,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -394,6 +395,20 @@ void require_finite(const std::vector<float>& values, const std::string& field) 
 
 void write_json(std::ostream& output, const nlohmann::json& value) {
     output << value.dump() << '\n';
+}
+
+// Core build provenance is optional metadata; older bundles report null.
+nlohmann::json read_provenance(const std::string& bundle_path) {
+    constexpr std::string_view kSection = "trtmc.provenance.json";
+    constexpr std::uint64_t kMaxBytes = 1U << 20U;
+    const BundleReader reader(bundle_path);
+    const BundleSectionInfo* section = reader.find_section(kSection);
+    if (section == nullptr)
+        return nullptr;
+    if (section->length > kMaxBytes)
+        throw std::runtime_error("bundle provenance exceeds 1 MiB");
+    const std::vector<char> bytes = reader.read_section(kSection);
+    return nlohmann::json::parse(bytes.begin(), bytes.end());
 }
 
 nlohmann::json text_json(const TextResult& result) {
@@ -1639,8 +1654,7 @@ void print_usage(std::ostream& output) {
               "TensorRT-RTX runtime options:\n"
               "  [--runtime-cache PATH] [--cuda-graphs]\n\n"
               "Task SDK options: [--task TASK_ID] [--set NAME=VALUE]...\n"
-              "Task SDK families default to the installed runtime directory.\n"
-              "Existing bundle modes still require an explicit --runtime-root.\n";
+              "Without --runtime-root, plugins load from the installed runtime directory.\n";
 }
 
 int run(int argc, char** argv, std::ostream& output, std::ostream& error) {
@@ -1670,7 +1684,8 @@ int run(int argc, char** argv, std::ostream& output, std::ostream& error) {
                                 {"family", bundle.family},
                                 {"task", bundle.task},
                                 {"backend", bundle.backend},
-                                {"sections", std::move(sections)}});
+                                {"sections", std::move(sections)},
+                                {"provenance", read_provenance(command.bundle)}});
             return EXIT_SUCCESS;
         }
         const bool has_byok_library = has_option(command, "--byok-library");
@@ -1690,8 +1705,7 @@ int run(int argc, char** argv, std::ostream& output, std::ostream& error) {
             const auto model = Model::load(command.bundle, options);
             return dispatch(command, model, output);
         }
-        if (command.runtime_root.empty())
-            throw std::invalid_argument("--runtime-root is required for an existing bundle mode");
+        // An empty runtime root selects the directory containing libtrtmc_runtime.
         std::unique_ptr<ITask> task =
             load_task(command.bundle, command.runtime_root, command.kv_cache_size_bytes,
                       command.runtime_cache_path, command.cuda_graphs);

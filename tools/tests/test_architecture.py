@@ -375,6 +375,7 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
         "core/builder/tensorrt_model_connect/graph_transform.py",
         "core/builder/tensorrt_model_connect/family_cli.py",
         "core/builder/tensorrt_model_connect/model_support.py",
+        "core/builder/tensorrt_model_connect/provenance.py",
         "core/builder/tests/__init__.py",
         "core/builder/tests/test_build.py",
         "core/builder/tests/test_build_cli.py",
@@ -384,6 +385,7 @@ def test_shared_python_and_native_trees_are_closed_minimal_sets() -> None:
         "core/builder/tests/test_graph_transform.py",
         "core/builder/tests/test_family_cli.py",
         "core/builder/tests/test_model_support.py",
+        "core/builder/tests/test_provenance.py",
     }
     expected_native = {
         "core/runtime/bundle/bundle_format.cpp",
@@ -2103,6 +2105,25 @@ def test_every_family_owns_at_least_one_explicit_premerge_case() -> None:
                     selected.append(str(case.get("name") or ""))
         if not selected or any(not name for name in selected):
             violations.append(f"{family.name}:premerge={selected}")
+    assert violations == []
+
+
+def test_remote_manifests_pin_one_exact_checkpoint_revision() -> None:
+    violations: list[str] = []
+    revisions: dict[str, set[str]] = {}
+    for path in sorted(FAMILIES.glob("*/tests/manifests/*.json")):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if "hf_id" not in manifest:
+            continue
+        revision = manifest.get("hf_revision")
+        if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            violations.append(f"{path.relative_to(REPO)}:hf_revision")
+            continue
+        revisions.setdefault(manifest["hf_id"], set()).add(revision)
+    # Variants of one checkpoint must validate the same immutable snapshot.
+    violations.extend(
+        f"{checkpoint}:{sorted(pins)}" for checkpoint, pins in revisions.items() if len(pins) > 1
+    )
     assert violations == []
 
 

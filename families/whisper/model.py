@@ -308,6 +308,7 @@ class _WhisperModel:
         network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED))
         trt_config = builder.create_builder_config()
         trt_config.builder_optimization_level = 1
+        trt_config.clear_flag(trt.BuilderFlag.TF32)
 
         token_id = network.add_input("token_id", trt.int32, (1,))
         position_id = network.add_input("position_id", trt.int32, (1,))
@@ -395,6 +396,7 @@ class _WhisperModel:
                 max_cache_length=max_cache_length,
                 max_source_positions=max_source_positions,
                 dtype=work_np_dtype,
+                activation_type=config.hidden_act or "gelu",
             )
             hidden_state = result["hidden"]
             present_k_outputs.append(result["present_k"])
@@ -411,16 +413,10 @@ class _WhisperModel:
             eps_tensor,
             dtype=work_np_dtype,
         )
-        logits = graph_ops.add_matmul_rhs_constant(
-            network, hidden_state, hidden, vocab, weights["w_out"], dtype=work_np_dtype
+        # Preserve close token scores before argmax; a cast after FP16 GEMM is too late.
+        logits = graph_ops.add_logits_projection(
+            network, hidden_state, hidden, vocab, weights["w_out"]
         )
-        logits = graph_ops.add_bias_sum(
-            network, logits, vocab, np.zeros(vocab, dtype=work_np_dtype), dtype=work_np_dtype
-        )
-
-        # Logits output: always FP32 for accurate argmax/sampling
-        if work_trt_dtype != trt.float32:
-            logits = network.add_cast(logits, trt.float32).get_output(0)
         logits.name = "logits"
         network.mark_output(logits)
 
@@ -555,6 +551,9 @@ def _build_whisper_encoder(config, weights, *, precision="fp32", verbose=False):
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED))
     tc = builder.create_builder_config()
     tc.builder_optimization_level = 1
+    if precision == "fp32":
+        # Honor the FP32 encoder boundary without TF32 operand rounding.
+        tc.clear_flag(trt.BuilderFlag.TF32)
 
     eps_tensor = graph_ops.add_constant(
         network, (1, 1), np.array([config.rms_norm_eps], dtype=work_np_dtype), dtype=work_np_dtype
@@ -586,7 +585,7 @@ def _build_whisper_encoder(config, weights, *, precision="fp32", verbose=False):
     # Conv1 output: [1, hidden, 1, mel_length]. Squeeze to 2D for GELU, then back to 4D.
     c1_sq = network.add_shuffle(c1.get_output(0))
     c1_sq.reshape_dims = (hidden, mel_length)
-    c1o_2d = graph_ops.add_activation(network, c1_sq.get_output(0), "gelu_new", dtype=work_np_dtype)
+    c1o_2d = graph_ops.add_activation(network, c1_sq.get_output(0), config.hidden_act or "gelu", dtype=work_np_dtype)
     c1_unsq = network.add_shuffle(c1o_2d)
     c1_unsq.reshape_dims = (1, hidden, 1, mel_length)
 
@@ -607,7 +606,7 @@ def _build_whisper_encoder(config, weights, *, precision="fp32", verbose=False):
     # Conv2 output: [1, hidden, 1, max_source_positions]. Squeeze to 2D for GELU.
     c2_sq = network.add_shuffle(c2.get_output(0))
     c2_sq.reshape_dims = (hidden, max_source_positions)
-    c2o_2d = graph_ops.add_activation(network, c2_sq.get_output(0), "gelu_new", dtype=work_np_dtype)
+    c2o_2d = graph_ops.add_activation(network, c2_sq.get_output(0), config.hidden_act or "gelu", dtype=work_np_dtype)
 
     # Transpose to [max_source_positions, hidden]
     cr = network.add_shuffle(c2o_2d)
@@ -670,7 +669,7 @@ def _build_whisper_encoder(config, weights, *, precision="fp32", verbose=False):
             weights[f"{pfx}.b_fc1"],
             dtype=work_np_dtype,
         )
-        act = graph_ops.add_activation(network, fc1, "gelu_new", dtype=work_np_dtype)
+        act = graph_ops.add_activation(network, fc1, config.hidden_act or "gelu", dtype=work_np_dtype)
         fc2 = graph_ops.add_bias_sum(
             network,
             graph_ops.add_matmul_rhs_constant(
@@ -728,6 +727,7 @@ def _add_whisper_decoder_layer(
     max_cache_length,
     max_source_positions,
     dtype=np.float32,
+    activation_type="gelu",
 ):
     attention_size = hidden_size
     attention_window = max_cache_length + 1
@@ -901,6 +901,7 @@ def _add_whisper_decoder_layer(
         hidden_size=hidden_size,
         mlp_size=ffn_dim,
         dtype=dtype,
+        activation_type=activation_type,
     )
     out = network.add_elementwise(pca, mlp, trt.ElementWiseOperation.SUM).get_output(0)
     return {"hidden": out, "present_k": present_k, "present_v": present_v}

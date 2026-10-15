@@ -12,6 +12,7 @@ directory holds a final result is skipped unless ``rerun`` (the old directory is
 from __future__ import annotations
 
 import collections
+import copy
 import functools
 import hashlib
 import json
@@ -169,6 +170,7 @@ def run_one(environment: Environment, model: dict[str, Any], out: Path) -> dict[
     """Build the bundle when missing, qualify, and apply the bundle retention policy. A previous run
     in ``out`` is set aside first."""
     started = time.time()
+    model = copy.deepcopy(model)  # resolved build capacity must not mutate the caller's resume configuration
     set_aside(out)
     out.mkdir(parents=True, exist_ok=True)
     (out / RUN_KEY).write_text(run_key(environment, model) + "\n")
@@ -306,7 +308,7 @@ def exit_code(records: Sequence[Mapping[str, Any]], config_errors: Sequence[Mapp
 
 
 def write_exclusions(out_root: Path, excluded: Sequence[Mapping[str, Any]]) -> None:
-    """Record the profiles the machine's model list leaves out, so the summary shows them."""
+    """Audit the profiles the machine's model list leaves out, outside result statistics."""
     out_root.mkdir(parents=True, exist_ok=True)
     (out_root / EXCLUSIONS).write_text(json.dumps(list(excluded), indent=2) + "\n")
 
@@ -493,14 +495,10 @@ def run_context(roots: Sequence[Path]) -> str:
 
 
 def collect(roots: Sequence[Path]) -> tuple[dict[str, dict[str, Any]], collections.Counter, dict[str, int]]:
-    """The latest result of every planned or reported profile under the given roots; profiles a
-    root's model list excluded are listed unless another root holds a result for them."""
+    """Latest results of configured profiles. Exclusions and absent Task configurations remain
+    in run metadata for coverage audit, outside result statistics; real results still count."""
     rows = {}
     for root in roots:
-        path = root / EXCLUSIONS
-        for item in json.loads(path.read_text()) if path.is_file() else []:
-            rows[item["profile"]] = {"task": item.get("task"), "category": "excluded", "accuracy": [], "perf": [],
-                                     "backend": "", "notes": item.get("reason", ""), "root": root.name}
         plan = json.loads((root / PLAN).read_text()) if (root / PLAN).is_file() else {}
         for name in plan.get("selected", []):
             rows.setdefault(name, {"task": None, "category": "not-run", "accuracy": [], "perf": [], "backend": "",
@@ -513,6 +511,9 @@ def collect(roots: Sequence[Path]) -> tuple[dict[str, dict[str, Any]], collectio
             row = _row(directory)
             if row and row["time"] >= rows.get(directory.name, {}).get("time", float("-inf")):
                 rows[directory.name] = {**row, "root": root.name}  # the latest run of a profile wins
+    rows = {profile: row for profile, row in rows.items()
+            if row["category"] != "excluded" and not (
+                row["category"] == "config-error" and str(row.get("notes", "")).startswith("no Task defaults"))}
     counts = collections.Counter(row["category"] for row in rows.values())
     ordered = [*CATEGORIES, *sorted(set(counts) - set(CATEGORIES))]
     return rows, counts, {category: position for position, category in enumerate(ordered)}
