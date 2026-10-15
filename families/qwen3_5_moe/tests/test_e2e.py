@@ -52,7 +52,11 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
     assert (runtime / "libtrtmc_backend_trt.so").is_file()
     from huggingface_hub import snapshot_download
 
-    source = Path(snapshot_download(repo_id=MANIFEST["hf_id"], revision=MANIFEST["hf_revision"]))
+    source = Path(snapshot_download(
+        repo_id=MANIFEST["hf_id"],
+        revision=MANIFEST["hf_revision"],
+        local_files_only=True,
+    ))
     # The family stages regular hardlinks itself and copies only writable metadata.
     # Reuse the immutable snapshot here; the independent reference reads it directly.
     checkpoint = source
