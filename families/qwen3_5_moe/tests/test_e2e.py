@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from types import SimpleNamespace
 import pytest
 from tensorrt_model_connect import BuildRequest, build
@@ -45,7 +46,7 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
     if selected and not ({case_name, MANIFEST["name"], MANIFEST["family"]} & selected):
         pytest.skip("case not selected")
     runtime = Path(os.environ["TRTMC_RUNTIME_ROOT"])
-    reference_python = Path(os.environ["TRTMC_QWEN35_MOE_REFERENCE_PYTHON"])
+    reference_python = Path(os.environ.get("TRTMC_QWEN35_MOE_REFERENCE_PYTHON", sys.executable))
     assert runtime.is_dir() and reference_python.is_file()
     assert (runtime / "libtrtmc_model_qwen3_5_moe.so").is_file()
     assert (runtime / "libtrtmc_backend_trt.so").is_file()
