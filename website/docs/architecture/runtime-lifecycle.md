@@ -71,3 +71,13 @@ explicit extension DSO and three-part binding, not a general plugin registry.
 Applications destroy Task objects before the loaded family and backend
 libraries leave scope. Families release their streams, buffers, communicators,
 engines, and family-local state; the loader owns the dynamic-library handles.
+
+## FP8 tensor storage
+
+The native runtime represents TensorRT `kFP8` I/O as `DType::kFloat8E4M3`.
+Each element occupies one byte, so tensor sizes and engine buffer allocations
+use the encoded E4M3 storage size rather than the size of `float`. This dtype is
+distinct from signed INT8 and does not convert or dequantize the stored values.
+Families continue to own quantization scales, graph construction, and tensor
+semantics. This storage contract alone does not imply that a GPU supports FP8
+arithmetic or that a model configuration has been qualified.

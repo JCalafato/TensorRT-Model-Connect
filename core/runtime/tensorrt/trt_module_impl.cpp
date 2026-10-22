@@ -51,6 +51,8 @@ DType TrtModuleImpl::from_trt_dtype(nvinfer1::DataType dt) {
         return DType::kInt32;
     case nvinfer1::DataType::kINT8:
         return DType::kInt8;
+    case nvinfer1::DataType::kFP8:
+        return DType::kFloat8E4M3;
     default:
         return DType::kFloat32;
     }

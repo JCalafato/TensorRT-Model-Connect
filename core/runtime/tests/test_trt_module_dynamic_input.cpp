@@ -15,6 +15,21 @@
 #include <memory>
 #include <stdexcept>
 
+namespace trtmc {
+
+class TrtModuleImplTestPeer {
+  public:
+    static DType from_trt_dtype(nvinfer1::DataType dtype) {
+        return TrtModuleImpl::from_trt_dtype(dtype);
+    }
+    static std::size_t allocation_bytes(const nvinfer1::Dims& dims, DType dtype) {
+        std::vector<int64_t> shape;
+        return TrtModuleImpl::compute_alloc_bytes(dims, dtype, shape);
+    }
+};
+
+} // namespace trtmc
+
 namespace {
 
 int failures = 0;
@@ -24,6 +39,22 @@ void check(bool condition, const char* name) {
         std::cerr << "FAIL: " << name << '\n';
         ++failures;
     }
+}
+
+void test_fp8_tensor_storage_and_mapping() {
+    const auto dtype = trtmc::TrtModuleImplTestPeer::from_trt_dtype(nvinfer1::DataType::kFP8);
+    check(dtype == trtmc::DType::kFloat8E4M3, "TensorRT FP8 maps to E4M3, not float32");
+    check(trtmc::dtype_size(dtype) == 1, "E4M3 elements occupy one byte");
+    uint8_t values[] = {0x00, 0x38, 0xb8, 0x7e, 0xfe, 0x01};
+    const trtmc::Tensor tensor{values, {2, 3}, dtype};
+    check(tensor.numel() == 6 && tensor.nbytes() == sizeof(values),
+          "FP8 host tensor sizes use byte storage");
+    check(trtmc::TrtModuleImplTestPeer::allocation_bytes(nvinfer1::Dims{2, {2, 3}}, dtype) ==
+              sizeof(values),
+          "FP8 engine buffer allocation uses byte storage");
+    check(trtmc::TrtModuleImplTestPeer::from_trt_dtype(nvinfer1::DataType::kINT8) ==
+              trtmc::DType::kInt8,
+          "signed integer storage remains distinct from E4M3");
 }
 
 trtmc::TrtUniquePtr<nvinfer1::ICudaEngine> build_identity(bool dynamic) {
@@ -177,6 +208,9 @@ void test_short_external_static_upload_preserves_its_tail(nvinfer1::ICudaEngine&
 } // namespace
 
 int main() {
+    test_fp8_tensor_storage_and_mapping();
+    if (failures)
+        return failures;
     int device_count = 0;
     if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count == 0)
         return 77;
