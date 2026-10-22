@@ -22,6 +22,8 @@
 
 namespace trtmc {
 
+class NemotronHPairedDraft;
+
 struct RecurrentGenConfig {
     int32_t vocab_size{0};
     int32_t id_bos{0};
@@ -36,7 +38,9 @@ class RecurrentPipeline final : public ITextGeneration {
                       std::unique_ptr<NemotronHInferenceState> state, RecurrentGenConfig config,
                       cudaStream_t stream, const char* name,
                       std::shared_ptr<ITokenizer> tokenizer = nullptr,
-                      std::string model_id_str = "");
+                      std::string model_id_str = "",
+                      std::unique_ptr<NemotronHPairedDraft> paired = nullptr);
+    ~RecurrentPipeline() override;
 
     TextResult generate(const std::string& prompt, const TextGenerationConfig& cfg = {}) override;
     int32_t default_max_new_tokens() const override { return 128; }
@@ -56,10 +60,16 @@ class RecurrentPipeline final : public ITextGeneration {
     const char* name_;
     std::shared_ptr<ITokenizer> tokenizer_;
     std::string model_id_;
+    std::unique_ptr<NemotronHPairedDraft> paired_;
 
     std::vector<int32_t> generate_from_ids(const std::vector<int32_t>& input_ids,
                                            int32_t max_new_tokens,
                                            const NemotronHSamplingParams& params);
+
+    std::vector<int32_t> generate_paired(const std::vector<int32_t>& input_ids,
+                                         int32_t max_new_tokens,
+                                         const NemotronHSamplingParams& sampling,
+                                         std::vector<float>& logits, int32_t& decode_steps);
 
     void run_step(int32_t token_id, std::vector<float>& logits, bool copy_logits);
 

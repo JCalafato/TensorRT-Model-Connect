@@ -40,8 +40,9 @@ def test_parse_layer_types_maps_and_filters_pattern_chars():
     assert parsed == ["mamba2", "mlp", "attention", "mlp", "mamba2"]
 
 
+@pytest.mark.parametrize("fp8_cache", [False, True])
 def test_load_weights_mixed_layer_routing_and_fallbacks(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fp8_cache: bool,
 ):
     """Intent: execute mamba2/mlp/attention branches plus fallback code paths.
     Preconditions: three-layer hybrid pattern with missing optional mamba norm/final/lm_head keys.
@@ -89,6 +90,9 @@ def test_load_weights_mixed_layer_routing_and_fallbacks(
         "backbone.layers.2.mixer.v_proj.weight": _seq(4, 8, start=1300),
         "backbone.layers.2.mixer.o_proj.weight": _seq(8, 8, start=1400),
     }
+    if fp8_cache:
+        tensors["backbone.layers.2.mixer.k_proj.k_scale"] = np.array(0.125, dtype=np.float32)
+        tensors["backbone.layers.2.mixer.v_proj.v_scale"] = np.array(0.25, dtype=np.float32)
     _patch_tensor_io(monkeypatch, tensors)
 
     weights = model._NemotronHModel().load_weights("/unused", cfg)
@@ -128,6 +132,11 @@ def test_load_weights_mixed_layer_routing_and_fallbacks(
     assert weights["_layer_types"] == ["mamba2", "mlp", "attention"]
     assert weights["_num_mamba_layers"] == 1
     assert weights["_num_attention_layers"] == 1
+    assert weights["_fp8_kv_cache"] is fp8_cache
+    if fp8_cache:
+        assert weights["layer.2.kv_scales"] == (1.0, 0.125, 0.25)
+    else:
+        assert "layer.2.kv_scales" not in weights
     assert weights["_d_inner"] == 6
     assert weights["_conv_dim"] == 10
     assert weights["_d_conv"] == 2
@@ -154,3 +163,162 @@ def test_load_weights_raises_for_pattern_length_mismatch(
 
     with pytest.raises(AssertionError, match="Pattern length"):
         model._NemotronHModel().load_weights("/unused", cfg)
+
+
+@pytest.mark.parametrize("algorithm", ["FP8", "NVFP4", "W4A16_NVFP4"])
+def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatch, algorithm):
+    import json
+    import ml_dtypes
+    from families.nemotron_h.checkpoint_mapper import _open_safetensors, _load_tensor, _transpose_2d
+    from families.nemotron_h.prepared_quantization import PreparedLinear
+
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": "nemotron_h"}))
+    (tmp_path / "hf_quant_config.json").write_text(json.dumps({
+        "producer": {"name": "modelopt"},
+        "quantization": {"quant_algo": algorithm, "group_size": 16},
+    }))
+    # Minimal valid safetensors bytes exercise the actual training-framework-free FP8 reader.
+    if algorithm == "FP8":
+        values = {"p.weight": np.ones((32, 32), dtype=ml_dtypes.float8_e4m3fn),
+                  "p.weight_scale": np.array([.5], np.float32)}
+    else:
+        values = {"p.weight": np.full((32, 16), 0x21, np.uint8),
+                  "p.weight_scale": np.full((32, 2), 2, dtype=ml_dtypes.float8_e4m3fn),
+                  "p.weight_scale_2": np.array([.25], np.float32)}
+    if algorithm != "W4A16_NVFP4":
+        values["p.input_scale"] = np.array([.125], np.float32)
+    values["bf16_sample"] = np.array([.25, -2.0], dtype=ml_dtypes.bfloat16)
+    header, payload = {}, bytearray()
+    for name, value in values.items():
+        offset = len(payload)
+        payload.extend(value.tobytes())
+        dtype = ("F8_E4M3" if value.dtype == np.dtype(ml_dtypes.float8_e4m3fn)
+                 else "BF16" if value.dtype == np.dtype(ml_dtypes.bfloat16)
+                 else "U8" if value.dtype == np.uint8 else "F32")
+        header[name] = {"dtype": dtype, "shape": list(value.shape),
+                        "data_offsets": [offset, len(payload)]}
+    encoded = json.dumps(header).encode()
+    encoded += b" " * (-len(encoded) % 8)
+    (tmp_path / "model.safetensors").write_bytes(len(encoded).to_bytes(8, "little") + encoded + payload)
+    readers = _open_safetensors(tmp_path)
+    for name, value in values.items():
+        if header[name]["dtype"] not in {"F8_E4M3", "BF16"}:
+            continue
+        reader = readers.tensor_map[name]
+        first, second = reader.get_tensor(name), reader.get_tensor(name)
+        assert first.base is second.base is reader.storage
+        assert not first.flags.writeable
+        np.testing.assert_array_equal(first.view(np.uint8), value.view(np.uint8))
+    weight = _load_tensor(readers, "p.weight")
+    assert isinstance(weight, PreparedLinear)
+    assert weight.shape == (32, 32)
+    assert weight.format == algorithm.lower()
+    np.testing.assert_array_equal(weight.packed, values["p.weight"].view(np.uint8))
+    assert weight.input_scale is None if algorithm == "W4A16_NVFP4" else weight.input_scale[0] == .125
+    transposed = _transpose_2d(weight, "p")
+    assert transposed.transposed and transposed.packed is weight.packed
+    with pytest.raises(ValueError, match="already transposed"):
+        transposed.transpose()
+
+    from types import SimpleNamespace
+    from families.nemotron_h.prepared_quantization import PreparedQuantContext
+
+    calls = []
+    dense_context = object()
+    def dense_quantization(source, ops, requested, *, layer_types):
+        calls.append((source, requested, layer_types))
+        return dense_context
+    monkeypatch.setattr(model, "calibrate_nemotron_h", dense_quantization)
+    config = SimpleNamespace(raw={"hybrid_override_pattern": "M"}, num_hidden_layers=1)
+    request = SimpleNamespace(quantization=None, tensor_parallel_size=1)
+    policy, context = model._native_quantization(request, config, tmp_path, "fp16")
+    assert policy.request_format == ("fp8" if algorithm == "FP8" else "nvfp4")
+    assert isinstance(context, PreparedQuantContext)
+    assert not calls
+    request.quantization = "fp8" if algorithm == "FP8" else "nvfp4"
+    policy, context = model._native_quantization(request, config, tmp_path, "fp16")
+    assert policy.request_format == request.quantization
+    if algorithm == "W4A16_NVFP4":
+        assert isinstance(context, PreparedQuantContext)
+        assert not calls
+    else:
+        assert context is dense_context
+        assert calls == [(tmp_path, request.quantization, ["mamba2"])]
+
+
+def test_prepared_mixed_policy_preserves_activation_precision(tmp_path):
+    import json
+    from families.nemotron_h.prepared_quantization import checkpoint_policy
+
+    policies = {"backbone.layers.0.mixer.in_proj": {"quant_algo": "FP8"},
+                "backbone.layers.1.mixer.experts.0.up_proj": {"quant_algo": "W4A16_NVFP4", "group_size": 16}}
+    (tmp_path / "hf_quant_config.json").write_text(json.dumps({
+        "producer": {"name": "modelopt"}, "quantization": {
+            "quant_algo": "MIXED_PRECISION", "quantized_layers": policies,
+            "kv_cache_quant_algo": "FP8",
+        },
+    }))
+    policy = checkpoint_policy(tmp_path)
+    assert policy.request_format == "nvfp4"
+    assert policy.linear_format("backbone.layers.0.mixer.in_proj.weight") == "fp8"
+    assert policy.linear_format("backbone.layers.1.mixer.experts.0.up_proj.weight") == "w4a16_nvfp4"
+    assert policy.linear_format("lm_head.weight") is None
+
+
+@pytest.mark.parametrize("problem", ["algorithm", "group", "conflict", "producer"])
+def test_prepared_source_policy_rejects_inconsistent_metadata(tmp_path, problem):
+    import json
+    from families.nemotron_h.prepared_quantization import checkpoint_policy
+
+    sidecar = {"producer": {"name": "modelopt"}, "quantization": {
+        "quant_algo": "NVFP4", "group_size": 16,
+    }}
+    if problem == "algorithm":
+        sidecar["quantization"]["quant_algo"] = "INT4"
+    elif problem == "group":
+        sidecar["quantization"]["group_size"] = 32
+    elif problem == "producer":
+        sidecar["producer"]["name"] = "unknown"
+    else:
+        (tmp_path / "config.json").write_text(json.dumps({"quantization_config": {
+            "quant_method": "modelopt", "quant_algo": "FP8",
+        }}))
+    (tmp_path / "hf_quant_config.json").write_text(json.dumps(sidecar))
+    with pytest.raises(ValueError):
+        checkpoint_policy(tmp_path)
+    with pytest.raises(ValueError):
+        checkpoint_policy(tmp_path, allow_legacy_producer=True)
+
+
+def test_load_moe_explicit_layers_and_latent_projections(monkeypatch):
+    raw = {"layers_block_type": ["moe"], "n_routed_experts": 2, "moe_latent_size": 4}
+    cfg = ModelConfig(model_type="nemotron_h", vocab_size=5, hidden_size=8,
+                      num_hidden_layers=1, raw=raw)
+    tensors = {"backbone.embeddings.weight": _seq(5, 8),
+               "backbone.layers.0.norm.weight": _seq(8),
+               "backbone.layers.0.mixer.gate.weight": _seq(2, 8),
+               "backbone.layers.0.mixer.gate.e_score_correction_bias": _seq(2)}
+    for i in range(2):
+        tensors[f"backbone.layers.0.mixer.experts.{i}.up_proj.weight"] = _seq(6, 4, start=i)
+        tensors[f"backbone.layers.0.mixer.experts.{i}.down_proj.weight"] = _seq(4, 6, start=i)
+    tensors["backbone.layers.0.mixer.shared_experts.up_proj.weight"] = _seq(12, 8)
+    tensors["backbone.layers.0.mixer.shared_experts.down_proj.weight"] = _seq(8, 12)
+    tensors["backbone.layers.0.mixer.fc1_latent_proj.weight"] = _seq(4, 8)
+    tensors["backbone.layers.0.mixer.fc2_latent_proj.weight"] = _seq(8, 4)
+    _patch_tensor_io(monkeypatch, tensors)
+    weights = model._NemotronHModel().load_weights("/unused", cfg)
+    assert weights["_layer_types"] == ["moe"]
+    assert weights["layer.0.expert.1.up"].shape == (4, 6)
+    assert weights["layer.0.shared.down"].shape == (12, 8)
+    np.testing.assert_array_equal(weights["layer.0.router"], tensors["backbone.layers.0.mixer.gate.weight"].T)
+    np.testing.assert_array_equal(weights["layer.0.latent_in"], tensors["backbone.layers.0.mixer.fc1_latent_proj.weight"].T)
+    np.testing.assert_array_equal(weights["layer.0.latent_out"], tensors["backbone.layers.0.mixer.fc2_latent_proj.weight"].T)
+
+
+def test_native_layer_specs_do_not_drop_moe_or_unknown_layers():
+    assert model._parse_layer_types("ME*") == ["mamba2", "moe", "attention"]
+    assert model._config_layer_types({"layer_types": ["mamba", "moe", "attention"]}, 3) == ["mamba2", "moe", "attention"]
+    with pytest.raises(ValueError, match="Unsupported"):
+        model._config_layer_types({"hybrid_override_pattern": "Mx"}, 2)
+    with pytest.raises(ValueError, match="Conflicting"):
+        model._config_layer_types({"hybrid_override_pattern": "ME", "layer_types": ["mamba", "mlp"]}, 2)

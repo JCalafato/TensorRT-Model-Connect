@@ -69,12 +69,34 @@ from .checkpoint_mapper import (
 from . import graph_ops
 from . import graph_blocks
 from .parallel import normalize_parallel_config
+from .prepared_quantization import PreparedQuantContext, checkpoint_policy
 
 
 def _parse_layer_types(pattern: str) -> list[str]:
     """Parse hybrid_override_pattern: M=mamba2, -=mlp, *=attention."""
-    mapping = {"M": "mamba2", "-": "mlp", "*": "attention"}
+    mapping = {"M": "mamba2", "-": "mlp", "*": "attention", "E": "moe"}
     return [mapping[ch] for ch in pattern if ch in mapping]
+
+
+def _config_layer_types(raw: dict, num_layers: int) -> list[str]:
+    forms = []
+    pattern = raw.get("hybrid_override_pattern")
+    if pattern:
+        if not isinstance(pattern, str) or any(ch not in "M-*E" for ch in pattern):
+            raise ValueError("Unsupported Nemotron-H hybrid layer marker")
+        forms.append(_parse_layer_types(pattern))
+    for field in ("layer_types", "layers_block_type"):
+        if field in raw:
+            kinds = raw[field]
+            if not isinstance(kinds, list) or any(k not in {"mamba", "mlp", "attention", "moe"} for k in kinds):
+                raise ValueError("Unsupported Nemotron-H explicit layer type")
+            forms.append(["mamba2" if k == "mamba" else k for k in kinds])
+    if not forms:
+        forms.append(["mamba2"] * num_layers)
+    if any(form != forms[0] for form in forms):
+        raise ValueError("Conflicting Nemotron-H hybrid layer specifications")
+    assert len(forms[0]) == num_layers, f"Pattern length {len(forms[0])} != num_hidden_layers {num_layers}"
+    return forms[0]
 
 
 if TYPE_CHECKING:
@@ -95,12 +117,12 @@ def _load_projection(
     readers,
     hf_key: str,
     name: str,
-    quant_ctx: NemotronHQuantContext | None,
+    quant_ctx: NemotronHQuantContext | PreparedQuantContext | None,
     in_features: int,
     out_features: int,
 ) -> np.ndarray:
     """Load one projection as ``[in, out]``, or a placeholder when it is quantized."""
-    if quant_ctx is not None and quant_ctx.should_quantize(name):
+    if isinstance(quant_ctx, NemotronHQuantContext) and quant_ctx.should_quantize(name):
         return _shape_only(in_features, out_features)
     return _transpose_2d(_load_tensor(readers, hf_key), name)
 
@@ -112,7 +134,7 @@ def _projection(network, x, in_features, out_features, weights, key, *, dtype, q
             network, x, in_features, out_features, weights[key], key, dtype=dtype
         )
     return graph_ops.add_matmul_rhs_constant(
-        network, x, in_features, out_features, weights[key], dtype=dtype
+        network, x, in_features, out_features, weights[key], dtype=dtype, rank=2
     )
 
 
@@ -121,10 +143,15 @@ class _NemotronHModel:
         self,
         model_dir: str,
         config: ModelConfig,
-        quant_ctx: NemotronHQuantContext | None = None,
+        quant_ctx: NemotronHQuantContext | PreparedQuantContext | None = None,
     ) -> WeightDict:
         model_dir_path = Path(model_dir)
-        readers = _open_safetensors(model_dir_path)
+        if isinstance(quant_ctx, NemotronHQuantContext):
+            # The dense context owns raw packed projections and their validation.
+            # The ordinary mapper reads only its excluded full-precision tensors.
+            readers = _open_safetensors(model_dir_path, prepared=False)
+        else:
+            readers = _open_safetensors(model_dir_path)
 
         hidden = config.hidden_size
         vocab = config.vocab_size
@@ -133,12 +160,7 @@ class _NemotronHModel:
         head_dim = config.head_dim
         raw = config.raw
 
-        # Parse layer types from hybrid_override_pattern
-        pattern = raw.get("hybrid_override_pattern", "M" * num_layers)
-        layer_types = _parse_layer_types(pattern)
-        assert len(layer_types) == num_layers, (
-            f"Pattern length {len(layer_types)} != num_hidden_layers {num_layers}"
-        )
+        layer_types = _config_layer_types(raw, num_layers)
 
         # Mamba-2 dimensions
         mamba_num_heads = raw.get("mamba_num_heads", 64)
@@ -155,6 +177,12 @@ class _NemotronHModel:
         # Attention dimensions
         q_dim = num_heads * head_dim
         weights = WeightDict()
+        # Exported scale tensors, not broad checkpoint metadata, enable FP8 KV.
+        fp8_kv_cache = any(
+            _has_tensor(readers, f"backbone.layers.{i}.mixer.k_proj.k_scale")
+            for i, kind in enumerate(layer_types) if kind == "attention"
+        )
+        weights["_fp8_kv_cache"] = fp8_kv_cache
 
         # Embedding
         embedding = _load_tensor(readers, "backbone.embeddings.weight")
@@ -248,6 +276,31 @@ class _NemotronHModel:
                     hidden,
                 )
 
+            elif lt == "moe":
+                mixer = f"{hf_prefix}.mixer"
+                weights[f"{prefix}.router"] = _transpose_2d(
+                    _load_tensor(readers, f"{mixer}.gate.weight"), "router"
+                )
+                weights[f"{prefix}.router_bias"] = _load_tensor(
+                    readers, f"{mixer}.gate.e_score_correction_bias"
+                )
+                for expert in range(int(raw["n_routed_experts"])):
+                    for projection in ("up", "down"):
+                        weights[f"{prefix}.expert.{expert}.{projection}"] = _transpose_2d(
+                            _load_tensor(readers, f"{mixer}.experts.{expert}.{projection}_proj.weight"),
+                            f"expert.{expert}.{projection}",
+                        )
+                for projection in ("up", "down"):
+                    weights[f"{prefix}.shared.{projection}"] = _transpose_2d(
+                        _load_tensor(readers, f"{mixer}.shared_experts.{projection}_proj.weight"),
+                        f"shared.{projection}",
+                    )
+                if raw.get("moe_latent_size") is not None:
+                    for logical, source in (("latent_in", "fc1_latent_proj"), ("latent_out", "fc2_latent_proj")):
+                        weights[f"{prefix}.{logical}"] = _transpose_2d(
+                            _load_tensor(readers, f"{mixer}.{source}.weight"), logical
+                        )
+
             elif lt == "attention":
                 # Attention: q/k/v/o projections (no bias, no RoPE)
                 kv_dim = config.num_key_value_heads * head_dim
@@ -290,6 +343,16 @@ class _NemotronHModel:
                 weights[f"{prefix}.w_k"] = k_t
                 weights[f"{prefix}.w_v"] = v_t
                 weights[f"{prefix}.w_o"] = o_t
+
+                if fp8_kv_cache:
+                    scales = []
+                    for projection in ("q", "k", "v"):
+                        key = f"{hf_prefix}.mixer.{projection}_proj.{projection}_scale"
+                        value = np.asarray(_load_tensor(readers, key)) if _has_tensor(readers, key) else np.array(1.0)
+                        if value.size != 1 or not np.isfinite(value).all() or (value <= 0).any():
+                            raise ValueError(f"Invalid Nemotron-H FP8 attention scale: {key}")
+                        scales.append(float(value.item()))
+                    weights[f"{prefix}.kv_scales"] = tuple(scales)
 
                 attn_count += 1
 
@@ -334,12 +397,21 @@ class _NemotronHModel:
         verbose: bool = False,
         debug_layer_outputs: bool = False,
         parallel_config=None,
+        target_feature_layers: tuple[int, ...] = (),
     ) -> bytes:
-        """Build hybrid TRT engine with heterogeneous layer stack."""
+        """Build hybrid TRT engine, optionally exporting paired-draft features."""
+        if (
+            len(set(target_feature_layers)) != len(target_feature_layers)
+            or any(type(index) is not int or not 0 <= index < config.num_hidden_layers
+                   for index in target_feature_layers)
+        ):
+            raise ValueError("Nemotron-H target feature layers must be unique valid layer indices")
         parallel = normalize_parallel_config(parallel_config)
         if parallel.enabled:
             if quant_ctx is not None:
                 raise NotImplementedError("Nemotron-H quantized builds do not support tensor parallelism")
+            if target_feature_layers:
+                raise ValueError("Nemotron-H paired target features require tensor_parallel_size=1")
             parallel.validate()
             from .tp_builder import build_nemotron_h_tp_engine
 
@@ -426,17 +498,18 @@ class _NemotronHModel:
             conv_state_inputs.append(cs)
             ssm_state_inputs.append(ss)
 
+        cache_trt_dtype = trt.fp8 if weights.get("_fp8_kv_cache", False) else work_trt_dtype
         cache_k_inputs = []
         cache_v_inputs = []
         for ai in range(num_attn):
             ck = network.add_input(
                 graph_ops.layer_tensor_name("cache_k", ai),
-                work_trt_dtype,
+                cache_trt_dtype,
                 (max_cache_length, kv_attention_size),
             )
             cv = network.add_input(
                 graph_ops.layer_tensor_name("cache_v", ai),
-                work_trt_dtype,
+                cache_trt_dtype,
                 (max_cache_length, kv_attention_size),
             )
             cache_k_inputs.append(ck)
@@ -475,6 +548,7 @@ class _NemotronHModel:
         mamba_counter = 0
         attn_counter = 0
 
+        target_features = {}
         for layer_idx in range(num_layers):
             prefix = f"layer.{layer_idx}"
             lt = layer_types[layer_idx]
@@ -531,13 +605,21 @@ class _NemotronHModel:
                 )
                 hidden_state = result["hidden"]
 
+            elif lt == "moe":
+                from .moe import add_moe_layer
+
+                hidden_state = add_moe_layer(
+                    network, layer_hidden, layer_eps, weights=weights, prefix=prefix,
+                    raw=config.raw, dtype=layer_np_dtype, quant_ctx=quant_ctx,
+                )
+
             elif lt == "attention":
                 cache_k = cache_k_inputs[attn_counter]
                 cache_v = cache_v_inputs[attn_counter]
                 layer_mask = attention_mask
-                if cache_k.dtype != layer_trt_dtype:
+                if cache_k.dtype not in (trt.fp8, layer_trt_dtype):
                     cache_k = network.add_cast(cache_k, layer_trt_dtype).get_output(0)
-                if cache_v.dtype != layer_trt_dtype:
+                if cache_v.dtype not in (trt.fp8, layer_trt_dtype):
                     cache_v = network.add_cast(cache_v, layer_trt_dtype).get_output(0)
                 if layer_mask.dtype != layer_trt_dtype:
                     layer_mask = network.add_cast(layer_mask, layer_trt_dtype).get_output(0)
@@ -553,6 +635,8 @@ class _NemotronHModel:
                     hidden_size=hidden,
                     attention_size=attention_size,
                     kv_attention_size=kv_attention_size,
+                    fp8_kv_scales=weights.get(f"{prefix}.kv_scales"),
+                    decompose_attention="moe" in layer_types[:layer_idx],
                     num_heads=num_heads,
                     num_kv_heads=num_kv_heads,
                     head_dim=head_dim,
@@ -572,6 +656,8 @@ class _NemotronHModel:
 
             if debug_layer_outputs:
                 _mark_debug_output(network, hidden_state, f"debug_hidden_{layer_idx}")
+            if layer_idx in target_feature_layers and layer_idx != num_layers - 1:
+                target_features[layer_idx] = hidden_state
 
         # --- Final norm ---
         if hidden_state.dtype != io_trt_dtype:
@@ -582,12 +668,33 @@ class _NemotronHModel:
                 network, hidden_state, hidden, final_norm, io_eps_tensor, dtype=io_np_dtype
             )
 
+        if target_feature_layers:
+            # The final provider feature follows norm_f; earlier features are
+            # residual streams. Preserve companion-declared concatenation order.
+            if num_layers - 1 in target_feature_layers:
+                target_features[num_layers - 1] = hidden_state
+            features = [target_features[index] for index in target_feature_layers]
+            features = [
+                value if value.dtype == io_trt_dtype
+                else network.add_cast(value, io_trt_dtype).get_output(0)
+                for value in features
+            ]
+            seed = graph_ops.add_constant(
+                network, (1, hidden), np.zeros((1, hidden)), dtype=io_np_dtype
+            )
+            joined = network.add_concatenation([seed] * len(features))
+            joined.axis = 1
+            for index, feature in enumerate(features):
+                joined.set_input(index, feature)
+            target_hidden = joined.get_output(0)
+            target_hidden.name = "target_hidden"
+            network.mark_output(target_hidden)
+
         # --- LM head ---
-        logits = graph_ops.add_matmul_rhs_constant(
-            network, hidden_state, hidden, vocab, weights["w_lm_head"], dtype=io_np_dtype
-        )
+        matmul = graph_blocks.make_matmul_fn(network, io_np_dtype, quant_ctx)
+        logits = matmul(hidden_state, hidden, vocab, weights["w_lm_head"], "w_lm_head")
         b_out = np.zeros(vocab, dtype=io_np_dtype)
-        logits = graph_ops.add_bias_sum(network, logits, vocab, b_out, dtype=io_np_dtype)
+        logits = graph_ops.add_bias_sum(network, logits, vocab, b_out, dtype=io_np_dtype, rank=2)
         if logits.dtype != trt.float32:
             logits = network.add_cast(logits, trt.float32).get_output(0)
         logits.name = "logits"
@@ -609,10 +716,10 @@ class _NemotronHModel:
         for ai in range(num_attn):
             pk = present_k_outputs[ai]
             pv = present_v_outputs[ai]
-            if pk.dtype != work_trt_dtype:
-                pk = network.add_cast(pk, work_trt_dtype).get_output(0)
-            if pv.dtype != work_trt_dtype:
-                pv = network.add_cast(pv, work_trt_dtype).get_output(0)
+            if pk.dtype != cache_trt_dtype:
+                pk = network.add_cast(pk, cache_trt_dtype).get_output(0)
+            if pv.dtype != cache_trt_dtype:
+                pv = network.add_cast(pv, cache_trt_dtype).get_output(0)
             pk.name = graph_ops.layer_tensor_name("present_k", ai)
             pv.name = graph_ops.layer_tensor_name("present_v", ai)
             network.mark_output(pk)
@@ -640,8 +747,7 @@ class _NemotronHModel:
     def get_bundle_config_overrides(self, config: ModelConfig) -> dict:
         """Inject hybrid-specific config fields into the bundle."""
         raw = config.raw
-        pattern = raw.get("hybrid_override_pattern", "")
-        layer_types = _parse_layer_types(pattern)
+        layer_types = _config_layer_types(raw, config.num_hidden_layers)
 
         mamba_num_heads = raw.get("mamba_num_heads", 64)
         mamba_head_dim = raw.get("mamba_head_dim", 64)
@@ -699,7 +805,7 @@ def _add_mamba2_layer(
     mamba_head_dim: int,
     n_groups: int,
     dtype: np.dtype = np.float32,
-    quant_ctx: NemotronHQuantContext | None = None,
+    quant_ctx: NemotronHQuantContext | PreparedQuantContext | None = None,
 ) -> dict[str, trt.ITensor]:
     """Add one Mamba-2 SSD layer (single-step decode).
 
@@ -773,7 +879,7 @@ def _add_mamba2_layer(
     conv_flat = network.add_shuffle(conv_sum.get_output(0))
     conv_flat.reshape_dims = (1, conv_dim)
     conv_out = graph_ops.add_bias_sum(
-        network, conv_flat.get_output(0), conv_dim, weights[f"{prefix}.conv1d_bias"], dtype=dtype
+        network, conv_flat.get_output(0), conv_dim, weights[f"{prefix}.conv1d_bias"], dtype=dtype, rank=2
     )
     hbc_activated = graph_ops.add_activation(network, conv_out, "silu", dtype=dtype)
 
@@ -1011,7 +1117,7 @@ def _add_mlp_layer(
     hidden_size: int,
     mlp_size: int,
     dtype: np.dtype = np.float32,
-    quant_ctx: NemotronHQuantContext | None = None,
+    quant_ctx: NemotronHQuantContext | PreparedQuantContext | None = None,
 ) -> dict[str, trt.ITensor]:
     """Add MLP layer: RMSNorm -> up -> relu2 -> down -> residual."""
     normed = graph_ops.add_rms_norm(
@@ -1113,6 +1219,34 @@ def _runtime_config(
     return runtime
 
 
+def _native_quantization(request, config, model_dir: Path, precision: str):
+    """Return the source policy and its dense or extended Q/DQ context."""
+    requested = request.quantization
+    explicit = requested in {"fp8", "nvfp4"}
+    if requested not in {None, "none", "fp8", "nvfp4"}:
+        raise NotImplementedError(f"Nemotron-H does not support quantization={requested!r}")
+    if precision != "fp16" and (explicit or is_quantized_checkpoint(model_dir)):
+        raise ValueError(
+            "Nemotron-H quantized builds require precision fp16; "
+            "use --quantization fp8 or nvfp4 for the matching dense source"
+        )
+    if explicit and request.tensor_parallel_size != 1:
+        raise NotImplementedError("Nemotron-H quantized builds do not support tensor parallelism")
+    policy = checkpoint_policy(model_dir, allow_legacy_producer=explicit)
+    if explicit and (policy is None or requested != policy.request_format):
+        raise ValueError("Nemotron-H quantization must match the prepared checkpoint")
+    if policy is None:
+        return None, None
+    if precision != "fp16":
+        raise ValueError("Prepared Nemotron-H weights require precision fp16")
+    layer_types = _config_layer_types(config.raw, config.num_hidden_layers)
+    if explicit and policy.algorithm in {"FP8", "NVFP4"} and "moe" not in layer_types:
+        # Preserve the existing dense route, including bit-exact constants,
+        # shape-only placeholders and the FP8 overflow avoidance boundary.
+        return policy, calibrate_nemotron_h(model_dir, graph_ops, requested, layer_types=layer_types)
+    return policy, PreparedQuantContext()
+
+
 def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     """Dispatch complete offload or execute the unchanged native implementation."""
     from .build_request import coerce_request
@@ -1153,6 +1287,9 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
         if request.mtp_seq_len is not None:
             raise NotImplementedError("Nemotron-H does not support MTP speculative decoding")
 
+        if request.graph_transform is not None:
+            raise NotImplementedError("Nemotron-H does not support graph_transform")
+
         model_dir = Path(request.model_dir)
         config = ModelConfig.from_dir(model_dir)
         if str(config.model_type).lower() not in {"nemotron_h", "nemotron_hybrid"}:
@@ -1166,43 +1303,18 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
         )
         if max_sequence_length > config.max_position_embeddings:
             raise ValueError("Nemotron-H max_sequence_length exceeds checkpoint context capacity")
-        quant_ctx = None
-        if request.quantization in {"fp8", "nvfp4"}:
-            if precision != "fp16":
-                raise ValueError(f"Nemotron-H {request.quantization} builds require precision fp16")
-            if request.tensor_parallel_size != 1:
-                raise NotImplementedError(
-                    "Nemotron-H quantized builds do not support tensor parallelism"
-                )
-            layer_types = _parse_layer_types(
-                config.raw.get("hybrid_override_pattern", "M" * config.num_hidden_layers)
-            )
-            quant_ctx = calibrate_nemotron_h(
-                model_dir, graph_ops, request.quantization, layer_types=layer_types
-            )
-        elif request.quantization not in {None, "none"}:
-            raise NotImplementedError(
-                f"Nemotron-H does not support quantization={request.quantization!r}"
-            )
-        elif (
-            config.raw.get("quantization_config") is not None
-            or is_quantized_checkpoint(model_dir)
-            or any(
-                (model_dir / name).exists()
-                for name in ("hf_quant_config.json", "quantize_config.json", "quant_config.json")
-            )
-        ):
-            # Native weight loading would read the packed bytes as full-precision weights.
-            raise ValueError(
-                "this checkpoint is quantized; build it with --quantization fp8 or nvfp4 "
-                "(the Edge builder handles it on a supported platform)"
-            )
+        policy, quant_ctx = _native_quantization(request, config, model_dir, precision)
         if request.fp32_layers:
             raise NotImplementedError("Nemotron-H does not expose mixed-precision layers")
         parallel = ParallelConfig(
             tp_size=_positive_int(request.tensor_parallel_size, "tensor_parallel_size")
         )
         parallel.validate()
+        if parallel.enabled and (quant_ctx is not None or "moe" in _config_layer_types(config.raw, config.num_hidden_layers)):
+            raise NotImplementedError("Prepared/MoE Nemotron-H tensor parallelism is not implemented")
+        from .tokenizer_assets import native_tokenizer_assets
+
+        assets = native_tokenizer_assets(model_dir, _BUNDLE_FILES)
         model = _NemotronHModel()
         config.raw["_model_dir"] = str(model_dir)
         weights = model.load_weights(str(model_dir), config, quant_ctx)
@@ -1242,14 +1354,14 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
                 model,
                 precision=precision,
                 max_cache_length=max_sequence_length,
+                quantization=policy.request_format if policy is not None else "none",
+                kv_cache_quantization="fp8" if weights.get("_fp8_kv_cache", False) else "none",
                 decoder_engine_layout=layout,
                 tensor_parallel_size=parallel.tp_size,
                 tensor_parallel_mode="tensor_parallel" if parallel.enabled else "single",
             ),
         )
-        for filename in _BUNDLE_FILES:
-            path = model_dir / filename
-            if path.is_file():
-                writer.add_bytes(filename, path.read_bytes())
+        for filename, content in assets.items():
+            writer.add_bytes(filename, content)
 
     dispatch_build(request, writer, _build_native)
