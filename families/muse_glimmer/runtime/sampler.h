@@ -51,6 +51,9 @@ struct TextGenerationConfig; // defined in trtmc/task.h
 MuseSamplingParams muse_sampling_params_from_config(const TextGenerationConfig& cfg,
                                                     int32_t default_eos = -1);
 
+/// Whether the request selects the same deterministic argmax distribution.
+bool muse_is_greedy(const MuseSamplingParams& params);
+
 /// Create the exact host sampler selected by the request.
 std::unique_ptr<MuseISampler> create_muse_sampler(const MuseSamplingParams& params);
 

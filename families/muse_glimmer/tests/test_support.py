@@ -4,6 +4,7 @@
 """Muse-Glimmer identity and family-owned Edge route tests."""
 
 import json
+import struct
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -305,4 +306,47 @@ def test_native_bundle_header_has_one_owner(request_and_route, monkeypatch):
     build_bundle(request, request.output_path)
     assert calls == [(6656, 1024, (200001, 200008))]
     assert request.output_path.is_file()
-    assert request.output_path.stat().st_size > len(b"native-engine-fixture")
+    data = request.output_path.read_bytes()
+    assert data[:8] == b"BUNDLE\x01\x00"
+    header_size = struct.unpack("<Q", data[8:16])[0]
+
+    def unique_keys(pairs):
+        assert len(dict(pairs)) == len(pairs), "duplicate bundle header key"
+        return dict(pairs)
+
+    header = json.loads(data[16:16 + header_size], object_pairs_hook=unique_keys)
+    assert {key: header[key] for key in ("format", "family", "task", "backend")} == {
+        "format": 1, "family": "muse_glimmer", "task": "text_generation", "backend": "trt",
+    }
+    sections = header["sections"]
+    assert len(data) == 16 + header_size + sum(item["length"] for item in sections.values())
+    engine_section = sections["engine.plan"]
+    start = 16 + header_size + engine_section["offset"]
+    assert data[start:start + engine_section["length"]] == b"native-engine-fixture"
+
+
+@pytest.mark.parametrize("prefix", ["", "model.", "language_model.", "model.language_model."])
+@pytest.mark.parametrize("gate", ["gate_proj", "output_gate_proj"])
+def test_native_checkpoint_uses_canonical_tensor_names(tmp_path, prefix, gate):
+    torch = pytest.importorskip("torch")
+    from safetensors.torch import save_file
+    from families.muse_glimmer.checkpoint import Checkpoint
+
+    name = f"{prefix}layers.0.self_attn.{gate}.weight"
+    value = torch.arange(4, dtype=torch.float32).reshape(2, 2)
+    save_file({name: value}, tmp_path / "weights.safetensors")
+    (tmp_path / "hf_quant_config.json").write_text(json.dumps(quant_config()))
+    weight_map = {name: "weights.safetensors"}
+    index = tmp_path / "model.safetensors.index.json"
+    index.write_text(json.dumps({"weight_map": weight_map}))
+    with Checkpoint(tmp_path) as checkpoint:
+        for requested in ("layers.0.self_attn.gate_proj.weight", name):
+            assert torch.equal(checkpoint.tensor(requested), value)
+        projection = checkpoint.projection(f"{prefix}layers.0.self_attn.{gate}", 2, 2)
+        assert projection.algorithm == "dense"
+        assert (projection.weight == value.numpy()).all()
+    duplicate = ("model." if not prefix else "") + "layers.0.self_attn.gate_proj.weight"
+    weight_map[duplicate] = "weights.safetensors"
+    index.write_text(json.dumps({"weight_map": weight_map}))
+    with pytest.raises(ValueError, match="Duplicate canonical Muse tensor"):
+        Checkpoint(tmp_path)

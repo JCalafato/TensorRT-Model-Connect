@@ -253,15 +253,19 @@ MuseSamplingParams muse_sampling_params_from_config(const TextGenerationConfig& 
     return p;
 }
 
+bool muse_is_greedy(const MuseSamplingParams& params) {
+    const bool default_greedy = params.top_k <= 1 &&
+                                sanitized_top_p(params.top_p) >= 1.0F - kSamplingEpsilon &&
+                                sanitized_min_p(params.min_p) <= 0.0F && params.seed < 0;
+    return default_greedy || greedy_equivalent(params);
+}
+
 std::vector<float> muse_probabilities(const float* logits, int32_t vocab_size,
                                       const MuseSamplingParams& params) {
     if (vocab_size <= 0 || !logits)
         throw std::invalid_argument("Invalid Muse distribution");
     std::vector<float> result(static_cast<std::size_t>(vocab_size), 0);
-    const bool default_greedy = params.top_k <= 1 &&
-                                sanitized_top_p(params.top_p) >= 1.0F - kSamplingEpsilon &&
-                                sanitized_min_p(params.min_p) <= 0.0F && params.seed < 0;
-    if (default_greedy || greedy_equivalent(params)) {
+    if (muse_is_greedy(params)) {
         result[argmax_over_logits(logits, vocab_size, {}).token_id] = 1;
     } else {
         const auto dist = build_filtered_distribution(logits, vocab_size, params);

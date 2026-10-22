@@ -147,7 +147,8 @@ class NativePipeline final : public ITextGeneration {
     TextResult generate(const std::string& prompt, const TextGenerationConfig& cfg) override {
         const std::lock_guard<std::mutex> guard(mutex_);
         validate(cfg);
-        if (draft_version_ == 1 && cfg.temperature != 0.0F)
+        const auto params = muse_sampling_params_from_config(cfg, eos_.front());
+        if (draft_version_ == 1 && !muse_is_greedy(params))
             throw std::invalid_argument("Muse-Glimmer DFlash V1 requires greedy generation");
         if (cfg.eos_token_id < -1 || cfg.eos_token_id >= vocab_ || cfg.seed < -1)
             throw std::invalid_argument("Muse native EOS override or seed is out of range");
@@ -163,7 +164,6 @@ class NativePipeline final : public ITextGeneration {
             throw std::invalid_argument(
                 "Muse prompt and output budget exceed the native bundle capacity");
         reset();
-        const auto params = muse_sampling_params_from_config(cfg, eos_.front());
         auto sampler = create_muse_sampler(params);
         sampler->reset();
         const double setup_ms = milliseconds(setup);
@@ -292,9 +292,7 @@ class NativePipeline final : public ITextGeneration {
         checked(cudaMemcpyAsync(projected.data(), draft_->device_ptr("projected_hidden"),
                                 projected.size() * 2, cudaMemcpyDeviceToHost, draft_->stream()));
         draft_->sync();
-        const bool greedy = params.temperature < 1e-3F || params.top_p <= 0 ||
-                            (params.top_k <= 1 && params.top_p >= 1.0F - 1e-6F &&
-                             params.min_p <= 0 && params.seed < 0);
+        const bool greedy = muse_is_greedy(params);
         MuseSamplingParams draft_params = params;
         // V2 proposes over its conditional top-16 support using temperature;
         // target top-k/top-p/min-p filtering belongs to rejection verification.

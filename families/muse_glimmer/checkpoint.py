@@ -42,6 +42,12 @@ class Checkpoint:
             self.formats[name] = policy["quant_algo"]
         index = json.loads((self.path / "model.safetensors.index.json").read_text(encoding="utf-8"))
         self.index = index["weight_map"]
+        self.tensor_names = {}
+        for name in self.index:
+            canonical = canonical_module(name)
+            if canonical in self.tensor_names:
+                raise ValueError(f"Duplicate canonical Muse tensor: {canonical}")
+            self.tensor_names[canonical] = name
         self.stack = ExitStack()
         self.readers = {}
 
@@ -54,8 +60,7 @@ class Checkpoint:
     def tensor(self, name: str):
         from safetensors import safe_open
 
-        names = (name, "model.language_model." + name, "language_model." + name)
-        key = next((n for n in names if n in self.index), None)
+        key = self.tensor_names.get(canonical_module(name))
         if key is None:
             raise KeyError(f"Muse checkpoint tensor missing: {name}")
         shard = self.index[key]
@@ -79,6 +84,7 @@ class Checkpoint:
     def projection(self, name: str, output_width: int, input_width: int) -> Projection:
         import torch
 
+        name = canonical_module(name)
         algorithm = self.formats.get(name, "dense")
         tensor = self.tensor(name + ".weight")
         expected = (output_width, input_width // 2 if algorithm == "NVFP4" else input_width)
