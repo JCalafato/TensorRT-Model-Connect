@@ -18,6 +18,7 @@ from .native_kv_attention_builder import (
     NativeKvMasks,
     add_explicit_masked_grouped_query_attention,
 )
+from .prepared_quantization import PreparedLinear
 
 
 def _cast_back_to_trt_dtype(
@@ -72,6 +73,8 @@ def add_matmul_rhs_constant(
     fp32_accumulation: bool = True,
 ) -> trt.ITensor:
     """Matrix multiply: lhs @ rhs_constant.  rhs is [lhs_width, rhs_width]."""
+    if isinstance(rhs_weights, PreparedLinear):
+        return rhs_weights.matmul(network, lhs, lhs_width, rhs_width)
     rank = len(tuple(lhs.shape))
     rhs_shape = (
         (lhs_width, rhs_width)

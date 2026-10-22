@@ -76,7 +76,7 @@ def _build_engine(
         config,
         precision=precision,
         max_cache_length=max_sequence_length,
-        quantized=quant_ctx is not None,
+        quantized=quant_ctx is not None or bool(weights.get("_prepared_quantized", False)),
         debug_layer_outputs=False,
     )
     if capability.eligible:
@@ -261,7 +261,7 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
             )
             writer.add_bytes("engine.plan", plan)
             layout = "dual_profile"
-        elif request.fp32_layers:
+        elif request.fp32_layers or weights.get("_prepared_quantized", False):
             config.raw["_decoder_engine_role"] = "dual_profile"
             plan = _build_engine(
                 config,

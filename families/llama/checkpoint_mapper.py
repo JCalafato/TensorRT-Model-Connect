@@ -22,6 +22,7 @@ import ml_dtypes  # noqa: F401
 from safetensors import safe_open
 
 from .config import ModelConfig
+from .prepared_quantization import PreparedLinear, PreparedSafetensorsReader, checkpoint_format, positive_scale
 
 
 def _target_np_dtype(precision: str) -> np.dtype:
@@ -37,6 +38,8 @@ def _layer_key(layer_idx: int, suffix: str, model_prefix: str = "model") -> str:
 
 def _transpose_2d(arr: np.ndarray, name: str, precision: str = "fp32") -> np.ndarray:
     """Transpose [rows, cols] -> [cols, rows] in C-contiguous target dtype."""
+    if isinstance(arr, PreparedLinear):
+        return arr.transpose()
     if arr.ndim != 2:
         raise ValueError(f"Expected rank-2 tensor for transpose: {name}")
     return np.ascontiguousarray(arr.T, dtype=_target_np_dtype(precision))
@@ -158,6 +161,16 @@ def load_standard_weights(
         layer[f"{prefix}.w_v"] = v_t
         layer[f"{prefix}.w_o"] = o_t
 
+        # Quantized cache values are independent of linear-weight precision.
+        scale_names = [_layer_key(layer_idx, f"self_attn.{kind}_proj.{kind}_scale", model_prefix)
+                       for kind in ("k", "v")]
+        present = [_has_tensor(readers, name) for name in scale_names]
+        if any(present) and not all(present):
+            raise ValueError("Prepared Llama cache requires both K and V scales")
+        if all(present):
+            for kind, name in zip(("k", "v"), scale_names):
+                layer[f"{prefix}.kv_{kind}_scale"] = positive_scale(_load_tensor(readers, name), name)
+
         # Optional QKV biases (Qwen2 style)
         q_bias_key = _layer_key(layer_idx, "self_attn.q_proj.bias", model_prefix)
         k_bias_key = _layer_key(layer_idx, "self_attn.k_proj.bias", model_prefix)
@@ -228,6 +241,7 @@ def load_standard_weights(
         # Tied embeddings
         weights["w_out"] = _transpose_2d(embedding.copy(), "embedding_tied", precision=precision)
 
+    weights["_prepared_quantized"] = any(isinstance(value, PreparedLinear) for value in weights.values())
     weights["_attention_size"] = attention_size  # type: ignore[assignment]
     weights["_kv_attention_size"] = kv_attention_size  # type: ignore[assignment]
     weights["_mlp_size"] = mlp_size  # type: ignore[assignment]
@@ -252,9 +266,14 @@ def _open_safetensors(model_dir: Path) -> _ReaderCollection:
     """Open the checkpoint's required NumPy safetensors readers."""
     import json
 
+    prepared = checkpoint_format(model_dir) is not None
+
+    def open_reader(path):
+        return PreparedSafetensorsReader(path) if prepared else safe_open(str(path), framework="numpy")
+
     single = model_dir / "model.safetensors"
     if single.is_file():
-        return _ReaderCollection([safe_open(str(single), framework="numpy")])
+        return _ReaderCollection([open_reader(single)])
 
     index_path = model_dir / "model.safetensors.index.json"
     if index_path.is_file():
@@ -264,7 +283,7 @@ def _open_safetensors(model_dir: Path) -> _ReaderCollection:
             raise ValueError("model.safetensors.index.json has no weight_map")
         shard_files = sorted(set(str(value) for value in weight_map.values()))
         readers_by_file = {
-            shard: safe_open(str(model_dir / shard), framework="numpy") for shard in shard_files
+            shard: open_reader(model_dir / shard) for shard in shard_files
         }
         return _ReaderCollection(
             [readers_by_file[shard] for shard in shard_files],
@@ -275,7 +294,7 @@ def _open_safetensors(model_dir: Path) -> _ReaderCollection:
 
     diff_single = model_dir / "diffusion_pytorch_model.safetensors"
     if diff_single.is_file():
-        return _ReaderCollection([safe_open(str(diff_single), framework="numpy")])
+        return _ReaderCollection([open_reader(diff_single)])
 
     diff_index = model_dir / "diffusion_pytorch_model.safetensors.index.json"
     if diff_index.is_file():
@@ -285,7 +304,7 @@ def _open_safetensors(model_dir: Path) -> _ReaderCollection:
             raise ValueError("diffusion safetensors index has no weight_map")
         shard_files = sorted(set(str(value) for value in weight_map.values()))
         readers_by_file = {
-            shard: safe_open(str(model_dir / shard), framework="numpy") for shard in shard_files
+            shard: open_reader(model_dir / shard) for shard in shard_files
         }
         return _ReaderCollection(
             [readers_by_file[shard] for shard in shard_files],
@@ -303,6 +322,8 @@ def _has_tensor(readers: _ReaderCollection, name: str) -> bool:
 
 def _to_numpy_fp32(tensor) -> np.ndarray:
     """Copy a NumPy or ml_dtypes checkpoint tensor to float32."""
+    if hasattr(tensor, "detach"):
+        return tensor.detach().float().numpy()
     return np.asarray(tensor, dtype=np.float32)
 
 
@@ -310,4 +331,14 @@ def _load_tensor(readers: _ReaderCollection, name: str) -> np.ndarray:
     reader = readers.tensor_map.get(name)
     if reader is None:
         raise KeyError(f"Tensor not found: {name}")
-    return _to_numpy_fp32(reader.get_tensor(name))
+    tensor = reader.get_tensor(name)
+    if str(tensor.dtype) in {"uint8", "float8_e4m3fn"}:
+        if not isinstance(reader, PreparedSafetensorsReader):
+            raise ValueError(f"{name}: packed Llama weights require prepared source metadata")
+        def get_tensor(key):
+            source = readers.tensor_map.get(key)
+            if source is None:
+                raise KeyError(f"Missing prepared Llama scale: {key}")
+            return source.get_tensor(key)
+        return PreparedLinear.from_tensor(tensor, name, get_tensor)
+    return _to_numpy_fp32(tensor)

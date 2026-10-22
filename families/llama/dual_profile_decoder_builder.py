@@ -20,9 +20,9 @@ Scope: covers the same architectural variants the explicit
 ``standard_decoder_builder`` supports — RMSNorm or LayerNorm; SwiGLU or
 GeluFC MLP; RoPE (full / partial / interleaved), learned absolute, or
 ALiBi position; sequential or parallel residual; optional q/k_norm,
-QKV/output/MLP biases, and a Bloom-style embedding LayerNorm. Quantized
-builds (fp8 / int8 ``quant_ctx``) thread Q/DQ insertion through every
-projection matmul via ``QuantContext.maybe_quantized_matmul``. Per-layer
+QKV/output/MLP biases, and a Bloom-style embedding LayerNorm. Prepared
+ModelOpt FP8/NVFP4 projections retain source packed weights and calibrated
+scales through family-owned ``PreparedLinear`` TensorRT Q/DQ graphs. Per-layer
 debug outputs, hidden-state outputs, and the VL ``embed_input`` path stay
 on ``standard_decoder_builder`` for now and are dispatched there from
 inside ``build_standard_decoder_engine``.
@@ -629,6 +629,11 @@ def build_dual_profile_decoder_engine(
                 interleaved_rope,
                 sequence_length=None,
             )
+
+        from .prepared_quantization import quantize_cache_value
+        if f"{prefix}.kv_k_scale" in weights:
+            k = quantize_cache_value(network, k, weights[f"{prefix}.kv_k_scale"])
+            v = quantize_cache_value(network, v, weights[f"{prefix}.kv_v_scale"])
 
         if native_kv_cache:
             assert cache_write_indices is not None
