@@ -113,6 +113,23 @@ trtmc::TrtUniquePtr<nvinfer1::ICudaEngine> build_identity(bool dynamic,
         runtime->deserializeCudaEngine(plan->data(), plan->size()));
 }
 
+void check_vectorized_fp8_rejected(nvinfer1::ICudaEngine& engine, cudaStream_t stream,
+                                   void* external, bool prebind) {
+    std::vector<trtmc::ModuleExternalBinding> bindings;
+    if (prebind)
+        bindings.push_back({"input", external, 16});
+    auto* context = engine.createExecutionContext();
+    check(context != nullptr, "FP8 fixture creates a valid context before rejection");
+    if (!context)
+        return;
+    trtmc::TrtModuleImpl module(&engine, context, stream, 0, nullptr, bindings);
+    check(!module.ok(), "constructor rejects non-linear FP8 I/O");
+    check(trtmc::TrtModuleImplTestPeer::has_no_bindings_or_buffers(module),
+          "constructor rejects FP8 format before prebinding or buffer allocation");
+    check(module.device_ptr("input") == nullptr && module.device_ptr("output") == nullptr,
+          "rejected FP8 module exposes no device buffers");
+}
+
 void test_constructor_rejects_vectorized_fp8(cudaStream_t stream) {
     // The storage checks above run everywhere. This real-engine fixture needs
     // FP8 tactics (compute capability 8.9 or newer), not merely byte storage.
@@ -141,21 +158,8 @@ void test_constructor_rejects_vectorized_fp8(cudaStream_t stream) {
         check(false, "FP8 fixture can allocate a correctly padded external buffer");
         return;
     }
-    for (bool prebind : {false, true}) {
-        std::vector<trtmc::ModuleExternalBinding> bindings;
-        if (prebind)
-            bindings.push_back({"input", external, 16});
-        auto* context = engine->createExecutionContext();
-        check(context != nullptr, "FP8 fixture creates a valid context before rejection");
-        if (!context)
-            continue;
-        trtmc::TrtModuleImpl module(engine.get(), context, stream, 0, nullptr, bindings);
-        check(!module.ok(), "constructor rejects non-linear FP8 I/O");
-        check(trtmc::TrtModuleImplTestPeer::has_no_bindings_or_buffers(module),
-              "constructor rejects FP8 format before prebinding or buffer allocation");
-        check(module.device_ptr("input") == nullptr && module.device_ptr("output") == nullptr,
-              "rejected FP8 module exposes no device buffers");
-    }
+    for (bool prebind : {false, true})
+        check_vectorized_fp8_rejected(*engine, stream, external, prebind);
     cudaFree(external);
 }
 
