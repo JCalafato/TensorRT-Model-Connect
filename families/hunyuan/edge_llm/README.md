@@ -76,8 +76,10 @@ Connect quality qualification.
 Hy-MT2-1.8B (SM80), Hy-MT2-7B and Hy-MT1.5-7B (SM86) each pass both
 owning translations through the native TensorRT builder and Model Connect
 C++ runtime with the Edge SDK absent: FP16, TP1/batch1, context1024,
-TensorRT 11.1. All six requests match the independent FP32 reference token IDs
-and text exactly; the existing 0.15 normalized edit-distance and semantic
+TensorRT 11.1 in the recorded local environment. These retained results do not
+qualify the repository-pinned TensorRT environment; that requires fresh
+current-head CI. All six requests match the independent FP32 reference token
+IDs and text exactly; the existing 0.15 normalized edit-distance and semantic
 gates are unchanged. These results do not qualify other capacities, sampling
 policies, precisions or platforms.
 
