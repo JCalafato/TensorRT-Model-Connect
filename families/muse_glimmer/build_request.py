@@ -20,7 +20,7 @@ def _validate_id(field: str, value: str) -> None:
 
 @dataclass(frozen=True)
 class BuildRequest:
-    """Inputs for the one qualified Muse-Glimmer NVFP4 Edge profile."""
+    """Family-owned inputs for the admitted Muse-Glimmer NVFP4 text modes."""
 
     model_dir: Path
     output_path: Path

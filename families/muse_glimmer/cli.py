@@ -46,7 +46,7 @@ def build(
     companion: str | None = None,
     verbose: bool = False,
 ) -> int:
-    """Resolve one exact checkpoint and invoke its family-owned Edge route."""
+    """Resolve a checkpoint and invoke family-owned Edge or native selection."""
     model_dir = resolve_model(model, revision)
     resolve_family(load_model_metadata(model_dir), "muse_glimmer")
     request = BuildRequest(

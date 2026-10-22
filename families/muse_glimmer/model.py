@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 def build(request, writer) -> None:
-    """Build the exact qualified Muse-Glimmer profile through Edge-LLM."""
+    """Select complete Edge offload or the owning native implementation."""
     from .build_request import coerce_request
 
     request = coerce_request(request)
@@ -15,9 +15,9 @@ def build(request, writer) -> None:
 
     from .edge_llm.dispatch import build as dispatch_build
 
-    def native(_request, _writer) -> None:
-        raise NotImplementedError(
-            "Muse-Glimmer currently requires the qualified Edge-LLM 0.11.0 NVFP4 route"
-        )
+    def native(native_request, native_writer) -> None:
+        from .native_model import build as native_build
+
+        native_build(native_request, native_writer)
 
     dispatch_build(request, writer, native)

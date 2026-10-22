@@ -268,3 +268,41 @@ def test_prepare_maps_to_wheel_exporter_and_native_onnx_builder(
         (draft / "config.json").write_text(json.dumps(draft_config))
         with pytest.raises(ValueError, match="matched block-16"):
             companion_version(draft)
+
+
+def test_native_bundle_header_has_one_owner(request_and_route, monkeypatch):
+    """The public family entrypoint owns the header, including native fallback."""
+    pytest.importorskip("tensorrt")
+    from contextlib import nullcontext
+    from families.muse_glimmer import native_model
+    from families.muse_glimmer.cli import build_bundle
+
+    request, _ = request_and_route
+    raw = raw_config()
+    raw["text_config"].update(
+        sliding_window=2048,
+        layer_types=["sliding_attention", "sliding_attention", "sliding_attention", "full_attention"] * 13,
+        layer_rope_theta=[500000.0, 500000.0, 500000.0, 0.0] * 13,
+        rms_norm_eps=1e-5, post_norm_eps=1e-8, qk_scale_factor=3.87,
+        output_multiplier=0.19611613513818404, final_logit_softcapping=20.0,
+        bos_token_id=200000, eos_token_id=200001,
+    )
+    (request.model_dir / "config.json").write_text(json.dumps(raw))
+    (request.model_dir / "generation_config.json").write_text(
+        json.dumps({"eos_token_id": [200001, 200008]})
+    )
+    for name in ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja"):
+        (request.model_dir / name).write_text("fixture")
+    monkeypatch.setattr(builder, "package_present", lambda: False)
+    monkeypatch.setattr(native_model, "Checkpoint", lambda path: nullcontext(object()))
+    calls = []
+
+    def engine(config, weights, capacity, **kwargs):
+        calls.append((config.hidden_size, capacity, config.eos_token_ids))
+        return b"native-engine-fixture"
+
+    monkeypatch.setattr(native_model, "build_target", engine)
+    build_bundle(request, request.output_path)
+    assert calls == [(6656, 1024, (200001, 200008))]
+    assert request.output_path.is_file()
+    assert request.output_path.stat().st_size > len(b"native-engine-fixture")

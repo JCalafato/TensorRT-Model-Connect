@@ -13,9 +13,12 @@ through `CMAKE_PREFIX_PATH`. The family prefers a compatible installed
 0.11.0 Python wheel exporter and otherwise uses the SDK's provisioned Python.
 The wheel does not replace the native C++ SDK.
 
-Build on the target GPU. The admitted mixed NVFP4/MXFP8 checkpoint requires
-SM120 and a matching CUDA/TensorRT stack; the adapter does not cross-compile,
-recalibrate, or reinterpret packed source weights.
+Build on the target GPU. The Edge offload for the admitted mixed NVFP4/MXFP8
+checkpoint requires SM120 and a matching CUDA/TensorRT stack. This restriction
+belongs to that offload, not the native mathematical graph. Native execution
+has no SM allowlist: TensorRT must support its packed-format operators and the
+device must have sufficient memory. Neither route cross-compiles, recalibrates,
+or replaces the source precision recipe.
 
 ## Documented text configurations
 
@@ -48,7 +51,9 @@ verification profile for paired execution. Both base and draft must build;
 a failed pair is never replaced by an autoregressive bundle. DFlash V1 requires
 greedy generation. DFlash V2 does not add the V1 greedy-only restriction; local paired
 qualification uses greedy generation only. Unsupported controls, such as a
-seed override, remain explicit errors. DDTree is not exposed.
+seed override, remain explicit errors in the Edge route. The native runtime
+supports its seeded sampler and rejects unsupported controls before execution.
+DDTree is not exposed.
 
 ## Quality and limitations
 
@@ -65,6 +70,33 @@ checkpoint is text-only: its results do not qualify image or video execution.
 
 Selection and numerical qualification are separate. Accuracy-only failures
 must remain executable. Preparation failures retain diagnostic logs and warn
-before attempting the unchanged native fallback; because this owner currently
-has no native graph, that fallback reports an explicit unsupported error.
-Inference failures are returned to the caller and are never silently retried.
+before attempting the unchanged native fallback. Ordinary native execution uses
+this family's TensorRT Python graph and Model Connect C++ task; its full-model
+qualification is separate from the recorded Edge results. The graph preserves
+mixed NVFP4/MXFP8 weights and activations rather than substituting dense precision.
+Native DFlash V1/V2 build real block-16 draft engines, inherit the original
+packed target embedding/head, and collect the declared target feature layers.
+V2 additionally runs its conditional candidate selector. The family C++ runtime
+verifies the proposal prefix with the target one token at a time, applies exact
+p/q rejection correction for sampled V2 requests, and commits no rejected draft
+state. This is a correctness-first implementation, not a speculative speedup
+claim. V1 retains its greedy-only contract.
+
+### Native validation scope
+
+All three admitted text modes have completed full-checkpoint native build and
+inference. The existing owning scientific-answer check passes for ordinary
+execution and DFlash V2. The V1 output fails that unchanged semantic check,
+although its output is token-identical to ordinary execution of the exact same
+compiled target engine. This is a recorded target-output quality limitation,
+not evidence of a draft-verification discrepancy. V1 remains runnable; command
+success is not advertised as an accuracy pass.
+
+These results cover the recorded request and profile, not every prompt or
+platform. Small paired-runtime checks additionally cover seeded V2 sampling;
+full-checkpoint sampled quality has not been qualified. Native graph construction
+uses TensorRT's packed-format operators: operator support and sufficient memory
+are still required even though the native family has no GPU allowlist.
+Insufficient device memory is a runtime failure, not permission to silently
+change precision or remove a companion. Inference failures are returned to the
+caller and are never silently retried.
