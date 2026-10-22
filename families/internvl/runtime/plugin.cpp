@@ -93,15 +93,22 @@ extern "C" trtmc::ITask* trtmc_create_family(const trtmc::FamilyContext& context
     options.stream = stream_owner->get();
     std::unique_ptr<ITrtModule> decode;
     std::unique_ptr<ITrtModule> prefill;
-    if (tp_size > 1) {
-        const std::string section = "engine.rank" + std::to_string(group.rank) + ".plan";
+    const auto layout =
+        config.value("decoder_engine_layout", tp_size > 1 ? "dual_profile" : "split");
+    if (layout != "dual_profile" && layout != "split")
+        throw std::runtime_error("InternVL runtime.json has an invalid decoder_engine_layout");
+    if (tp_size > 1 && layout != "dual_profile")
+        throw std::runtime_error("InternVL TP requires a dual-profile decoder engine");
+    if (layout == "dual_profile") {
+        const std::string section =
+            tp_size > 1 ? "engine.rank" + std::to_string(group.rank) + ".plan" : "engine.plan";
         const auto& plan = internvl_factory::require_section(context.reader, section.c_str());
         options.distributed_communicator = group.communicator;
         options.distributed_owner = group.owner;
         auto dual = context.backend.create_dual_profile_modules(plan.data(), plan.size(), options);
         if (dual.decode == nullptr || !dual.decode->ok() || dual.prefill == nullptr ||
             !dual.prefill->ok())
-            throw std::runtime_error("InternVL TP engine did not create both profiles");
+            throw std::runtime_error("InternVL decoder engine did not create both profiles");
         decode = std::move(dual.decode);
         prefill = std::move(dual.prefill);
     } else {

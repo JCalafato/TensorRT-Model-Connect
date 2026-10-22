@@ -24,10 +24,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .config import ModelConfig
+from .torch_checkpoint import _open_torch_checkpoint
 from .checkpoint_mapper import (
     WeightDict,
     _open_safetensors,
     _load_tensor,
+    _load_projection,
     _has_tensor,
     _transpose_2d,
 )
@@ -222,6 +224,20 @@ class _InternVLModel:
 # ---------------------------------------------------------------------------
 
 
+def _open_checkpoint(model_dir: Path):
+    """Select the published disk layout; reader failures never change format."""
+    layouts = (
+        (("model.safetensors", "model.safetensors.index.json",
+          "diffusion_pytorch_model.safetensors", "diffusion_pytorch_model.safetensors.index.json"),
+         _open_safetensors),
+        (("pytorch_model.bin", "pytorch_model.bin.index.json"), _open_torch_checkpoint),
+    )
+    for filenames, reader in layouts:
+        if any((model_dir / filename).is_file() for filename in filenames):
+            return reader(model_dir)
+    raise FileNotFoundError(f"No supported InternVL checkpoint layout in {model_dir}")
+
+
 def _load_internvl_text_weights(
     model_dir: str,
     config: ModelConfig,
@@ -235,7 +251,9 @@ def _load_internvl_text_weights(
     from pathlib import Path
 
     model_dir_path = Path(model_dir)
-    readers = _open_safetensors(model_dir_path)
+    readers = _open_checkpoint(model_dir_path)
+    text_config = config.raw.get("text_config") or config.raw.get("llm_config") or config.raw
+    quantization = text_config.get("quantization_config")
 
     hidden = config.hidden_size
     vocab = config.vocab_size
@@ -281,10 +299,10 @@ def _load_internvl_text_weights(
         weights[f"{prefix}.post_attn_norm"] = post_norm.astype(np.float32)
 
         # Q/K/V/O projections
-        q_raw = _load_tensor(readers, f"{hf_prefix}.self_attn.q_proj.weight")
-        k_raw = _load_tensor(readers, f"{hf_prefix}.self_attn.k_proj.weight")
-        v_raw = _load_tensor(readers, f"{hf_prefix}.self_attn.v_proj.weight")
-        o_raw = _load_tensor(readers, f"{hf_prefix}.self_attn.o_proj.weight")
+        q_raw = _load_projection(readers, f"{hf_prefix}.self_attn.q_proj", quantization)
+        k_raw = _load_projection(readers, f"{hf_prefix}.self_attn.k_proj", quantization)
+        v_raw = _load_projection(readers, f"{hf_prefix}.self_attn.v_proj", quantization)
+        o_raw = _load_projection(readers, f"{hf_prefix}.self_attn.o_proj", quantization)
 
         q_hidden = q_raw.shape[0]
         if attention_size == 0:
@@ -313,10 +331,16 @@ def _load_internvl_text_weights(
                 raw = _load_tensor(readers, full_key).astype(np.float32)
                 weights[f"{prefix}.{proj_name}"] = raw
 
+        # InternVL3.5 uses Qwen3 per-head Q/K RMSNorm before rotary embedding.
+        for name in ("q_norm", "k_norm"):
+            key = f"{hf_prefix}.self_attn.{name}.weight"
+            if _has_tensor(readers, key):
+                weights[f"{prefix}.{name}"] = _load_tensor(readers, key)
+
         # SwiGLU MLP
-        gate_raw = _load_tensor(readers, f"{hf_prefix}.mlp.gate_proj.weight")
-        up_raw = _load_tensor(readers, f"{hf_prefix}.mlp.up_proj.weight")
-        down_raw = _load_tensor(readers, f"{hf_prefix}.mlp.down_proj.weight")
+        gate_raw = _load_projection(readers, f"{hf_prefix}.mlp.gate_proj", quantization)
+        up_raw = _load_projection(readers, f"{hf_prefix}.mlp.up_proj", quantization)
+        down_raw = _load_projection(readers, f"{hf_prefix}.mlp.down_proj", quantization)
 
         if mlp_size == 0:
             mlp_size = gate_raw.shape[0]
@@ -366,7 +390,7 @@ def _load_vision_and_projector_weights(
     from pathlib import Path
 
     model_dir_path = Path(model_dir)
-    readers = _open_safetensors(model_dir_path)
+    readers = _open_checkpoint(model_dir_path)
 
     weights = WeightDict()
     for reader in readers:
@@ -376,10 +400,35 @@ def _load_vision_and_projector_weights(
                 or key.startswith("multi_modal_projector.")
                 or key.startswith("visual.")
                 or key.startswith("mlp1.")
+                or key.startswith("vision_model.")
             ):
-                weights[key] = _load_tensor(readers, key)
+                weights[_native_vision_key(key)] = _load_tensor(readers, key)
 
     return weights
+
+
+def _native_vision_key(key: str) -> str:
+    """Map original InternVL checkpoints to this family's existing ViT graph."""
+    embeddings = {
+        "vision_model.embeddings.class_embedding": "vision_tower.embeddings.cls_token",
+        "vision_model.embeddings.position_embedding": "vision_tower.embeddings.position_embeddings",
+    }
+    if key in embeddings:
+        return embeddings[key]
+    if key.startswith("vision_model.embeddings.patch_embedding."):
+        return key.replace("vision_model.embeddings.patch_embedding.",
+                           "vision_tower.embeddings.patch_embeddings.projection.", 1)
+    if key.startswith("vision_model.encoder.layers."):
+        return (key.replace("vision_model.encoder.layers.", "vision_tower.encoder.layer.", 1)
+                .replace(".norm1.", ".layernorm_before.")
+                .replace(".norm2.", ".layernorm_after.")
+                .replace(".ls1", ".lambda_1").replace(".ls2", ".lambda_2"))
+    # Original mlp1 is LayerNorm -> Linear -> GELU -> Linear, not Linear -> LN.
+    for source, target in (("mlp1.0.", "layer_norm."), ("mlp1.1.", "linear_1."),
+                           ("mlp1.3.", "linear_2.")):
+        if key.startswith(source):
+            return key.replace(source, f"multi_modal_projector.{target}", 1)
+    return key
 
 
 def _tokenizer_runtime_contract(model_dir: Path) -> dict[str, object]:
@@ -415,6 +464,9 @@ def _tokenizer_runtime_contract(model_dir: Path) -> dict[str, object]:
         "tokenizer_add_special_tokens": False,
         "tokenizer_prefix_ids": prefix_ids,
         "tokenizer_suffix_ids": suffix_ids,
+        # Raw InternVL decoder configs can retain the base-model end-of-text
+        # token, while the instruction tokenizer stops at end-of-turn.
+        "id_eos": int(tokenizer.eos_token_id),
     }
 
 
@@ -451,7 +503,7 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
             raise ValueError("internvl supports only task=vision_language_generation")
         if request.quantization not in {None, "none"} or request.fp32_layers:
             raise NotImplementedError(
-                "InternVL supports only non-quantized uniform-precision builds"
+                "InternVL supports only source-checkpoint quantization and uniform compute precision"
             )
         model_dir = Path(request.model_dir)
         config = ModelConfig.from_dir(model_dir)
@@ -481,8 +533,10 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
                     ),
                 )
         else:
-            config.raw["_decoder_engine_role"] = "prefill"
-            prefill = model.build_engine(
+            # Both contexts share one engine's weights. Separate serialized
+            # prefill/decode engines unnecessarily duplicate decoder residency.
+            config.raw["_decoder_engine_role"] = "dual_profile"
+            decode = model.build_engine(
                 config,
                 weights,
                 max_length,
@@ -491,28 +545,9 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
                 verbose=request.verbose,
                 parallel_config=parallel,
             )
-            # Stage serialized plans on disk before building the next one.
-            writer.add_bytes("prefill.plan", prefill)
-            if int(model_vl.get("max_image_tiles", 1)) > 1:
-                # The dynamic-Sq graph accepts both multi-token prefill and
-                # single-token decode. Use that same mathematical network for
-                # tiled inputs; each runtime module owns its execution state.
-                writer.add_bytes("engine.plan", prefill)
-            del prefill
-            if int(model_vl.get("max_image_tiles", 1)) == 1:
-                config.raw["_decoder_engine_role"] = "decode"
-                decode = model.build_engine(
-                    config,
-                    weights,
-                    max_length,
-                    precision=precision,
-                    quant_ctx=None,
-                    verbose=request.verbose,
-                    parallel_config=parallel,
-                )
-                writer.add_bytes("engine.plan", decode)
-                del decode
             config.raw.pop("_decoder_engine_role", None)
+            writer.add_bytes("engine.plan", decode)
+            del decode
         vision = model.build_vision_engine(
             str(model_dir), config, weights, precision=precision, verbose=request.verbose
         )
@@ -523,6 +558,7 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
         vl = model_vl
         runtime = {
             "tensor_parallel_size": parallel.tp_size,
+            "decoder_engine_layout": "dual_profile",
             "num_layers": config.num_hidden_layers,
             "max_cache_length": max_length,
             "vocab_size": config.vocab_size,
