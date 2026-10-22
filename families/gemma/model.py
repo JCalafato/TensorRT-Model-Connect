@@ -24,6 +24,7 @@ from .parallel import ParallelConfig
 from .parallel import normalize_parallel_config
 from .dual_profile_decoder_tp_builder import build_dual_profile_tp_decoder_engine
 from .standard_decoder_builder import build_standard_decoder_engine
+from .support import LEGACY_TEXT_MODEL_TYPES as _SUPPORTED_MODEL_TYPES
 
 
 if TYPE_CHECKING:
@@ -298,9 +299,6 @@ _GEMMA3_MODEL_TYPES = frozenset({"gemma3", "gemma3_text"})
 _FP16_UNSAFE_MODEL_TYPES = _GEMMA3_MODEL_TYPES
 
 
-_SUPPORTED_MODEL_TYPES = frozenset({"gemma", "gemma2"}) | _GEMMA3_MODEL_TYPES
-
-
 def _positive_int(value: object, name: str) -> int:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a positive integer")
@@ -450,6 +448,14 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
 
     if request.context_parallel_size != 1:
         raise ValueError("this family does not support context parallelism")
+
+    model_dir = Path(request.model_dir)
+    config = ModelConfig.from_dir(model_dir)
+    if config.model_type in {"gemma4", "gemma4_text", "gemma4_unified", "gemma4_unified_text"}:
+        from .gemma4_text import build as build_gemma4
+
+        build_gemma4(request, writer, config)
+        return
 
     if request.task != "text_generation":
         raise ValueError("gemma supports only task=text_generation")
