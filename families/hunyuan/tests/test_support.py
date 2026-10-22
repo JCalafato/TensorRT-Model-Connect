@@ -218,3 +218,35 @@ def test_native_weights_require_norm_and_respect_tied_head(tmp_path, tied):
     np.testing.assert_array_equal(
         load_standard_weights(tmp_path, config)["w_out"], tensors["lm_head.weight"].T
     )
+
+
+@pytest.mark.parametrize("manifest_name", ["hy-mt1.5-7b", "hy-mt2-1.8b", "hy-mt2-7b"])
+@pytest.mark.parametrize("selection", ["exact", "idiom", "both", "manifest", "family", "enabled", "disabled"])
+def test_e2e_selection_keeps_exact_cases_separate(manifest_name, selection, monkeypatch):
+    from families.hunyuan.tests import test_e2e
+
+    monkeypatch.delenv("TRTMC_E2E", raising=False)
+    names = {manifest_name, manifest_name + "-idiom"}
+    options = {}
+    expected = names
+    if selection in {"exact", "idiom", "both"}:
+        expected = ({manifest_name} if selection == "exact" else
+                    {manifest_name + "-idiom"} if selection == "idiom" else names)
+        options["--e2e-testcase"] = [",".join(sorted(expected))]
+    elif selection in {"manifest", "family"}:
+        options["--e2e-model"] = [manifest_name if selection == "manifest" else "hunyuan"]
+    elif selection == "enabled":
+        monkeypatch.setenv("TRTMC_E2E", "1")
+    else:
+        expected = set()
+    config = SimpleNamespace(getoption=lambda name, default=None: options.get(name, default))
+    executed = set()
+    for name in sorted(test_e2e._CASES):
+        manifest, _ = test_e2e._CASES[name]
+        if name in expected or selection in {"family", "enabled"}:
+            test_e2e._require_selected(name, manifest, config)
+            executed.add(name)
+        else:
+            with pytest.raises(pytest.skip.Exception):
+                test_e2e._require_selected(name, manifest, config)
+    assert executed == (set(test_e2e._CASES) if selection in {"family", "enabled"} else expected)
