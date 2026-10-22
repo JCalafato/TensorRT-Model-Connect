@@ -433,9 +433,8 @@ def build_standard_decoder_engine(
     # Output vocab may differ from input vocab (e.g. Bark semantic: 129600 in, 10048 out).
     # Derive from w_out shape if available.
     out_vocab = weights["w_out"].shape[1] if isinstance(weights["w_out"], np.ndarray) else vocab
-    logits = graph_ops.add_matmul_rhs_constant(
-        network, hidden_state, hidden, out_vocab, weights["w_out"],
-        dtype=work_np_dtype)
+    logits = graph_blocks.make_matmul_fn(network, work_np_dtype, quant_ctx)(
+        hidden_state, hidden, out_vocab, weights["w_out"], "w_out")
     # LM head bias (if present, e.g. CodeGen) or zero bias for C++ parity
     lm_bias = weights.get("lm_head_bias")
     if lm_bias is not None:

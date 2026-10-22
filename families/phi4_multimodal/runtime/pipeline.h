@@ -30,6 +30,7 @@ struct Phi4MultimodalConfig {
     int32_t vocab_size{0};
     int32_t id_bos{0};
     int32_t id_eos{0};
+    std::vector<int32_t> eos_token_ids;
     int32_t image_token_id{-1};
     int32_t vision_output_dim{0};
     bool has_position_input{true};

@@ -49,6 +49,7 @@ if(TRTMC_BUILD_TESTS)
   add_executable(test_phi4_multimodal_runtime_config_contract
     ${PROJECT_SOURCE_DIR}/families/phi4_multimodal/tests/cpp/test_phi4_multimodal_runtime_config_contract.cpp
     image_preprocessor.cpp
+    sampler.cpp
   )
   target_include_directories(test_phi4_multimodal_runtime_config_contract PRIVATE
     ${PROJECT_SOURCE_DIR}
@@ -58,6 +59,7 @@ if(TRTMC_BUILD_TESTS)
   )
   target_link_libraries(test_phi4_multimodal_runtime_config_contract PRIVATE
     nlohmann_json::nlohmann_json
+    trtmc_core
   )
   target_compile_options(test_phi4_multimodal_runtime_config_contract PRIVATE
     -Wall -Wextra -Wpedantic

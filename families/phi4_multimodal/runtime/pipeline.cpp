@@ -62,6 +62,8 @@ TextResult Phi4MultimodalPipeline::generate(const std::string& prompt,
     auto input_ids = tokenizer_->encode(prompt);
     auto [max_new, eos] = resolve_gen_limits(cfg);
     auto sp = phi4_multimodal_sampling_params_from_config(cfg, eos);
+    if (cfg.eos_token_id < 0)
+        sp.additional_eos_token_ids = config_.eos_token_ids;
     auto output_ids = generate_from_ids(input_ids, max_new, sp);
 
     std::vector<int32_t> new_tokens(
@@ -436,6 +438,8 @@ TextResult Phi4MultimodalPipeline::generate(const std::string& prompt, const flo
             std::to_string(max_new) + " new tokens exceeds the bundle context of " +
             std::to_string(config_.prefill_max_length) + " tokens");
     auto sp_vl = phi4_multimodal_sampling_params_from_config(cfg, eos);
+    if (cfg.eos_token_id < 0)
+        sp_vl.additional_eos_token_ids = config_.eos_token_ids;
     auto out =
         generate_vl_from_ids(input_ids, features, deepstack_features, nf, dim, max_new, sp_vl);
 
@@ -452,6 +456,8 @@ Phi4MultimodalPipeline::generate_ids(const std::vector<int32_t>& input_ids,
     int32_t max_new = cfg.max_new_tokens;
     int32_t eos = (cfg.eos_token_id >= 0) ? cfg.eos_token_id : config_.id_eos;
     auto sp = phi4_multimodal_sampling_params_from_config(cfg, eos);
+    if (cfg.eos_token_id < 0)
+        sp.additional_eos_token_ids = config_.eos_token_ids;
     return GenerationResult{generate_from_ids(input_ids, max_new, sp)};
 }
 

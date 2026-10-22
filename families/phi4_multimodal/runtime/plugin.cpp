@@ -146,6 +146,12 @@ extern "C" trtmc::ITask* trtmc_create_family(const trtmc::FamilyContext& context
     model.vocab_size = phi4_multimodal_factory::require_positive_int(config, "vocab_size");
     model.id_bos = phi4_multimodal_factory::require_int(config, "id_bos");
     model.id_eos = phi4_multimodal_factory::require_int(config, "id_eos");
+    model.eos_token_ids =
+        config.value("eos_token_ids", model.id_eos >= 0 ? std::vector<int32_t>{model.id_eos}
+                                                        : std::vector<int32_t>{});
+    for (const auto token : model.eos_token_ids)
+        if (token < 0 || token >= model.vocab_size)
+            throw std::runtime_error("Phi-4 Multimodal runtime.json has invalid EOS token");
     model.image_token_id = phi4_multimodal_factory::require_int(config, "image_token_id");
     model.vision_output_dim =
         phi4_multimodal_factory::require_positive_int(config, "vision_output_dim");
