@@ -56,7 +56,9 @@ forward. Output comparison does not strip generated text or relax gates.
 Ordinary Edge preparation failures retain a diagnostic log, warn and attempt
 the family-owned native builder. Dense Gemma4 text, image, audio and combined-media input have native paths; modes
 without an equivalent native graph remain explicit failures. A failed companion request never produces a base-only
-bundle. Publication and runtime failures propagate without backend switching.
+bundle. Native Gemma4 rejects `fp32_layers`, `mtp_seq_len` and
+`graph_transform` rather than silently dropping these unsupported controls.
+Publication and runtime failures propagate without backend switching.
 Use scratch-backed output and `TMPDIR` with enough space for export and bundle
 extraction; these operations are bounded-memory, not zero-disk-space.
 

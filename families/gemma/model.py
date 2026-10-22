@@ -460,8 +460,6 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
     if request.task != "text_generation":
         raise ValueError("gemma supports only task=text_generation")
 
-    model_dir = Path(request.model_dir)
-    config = ModelConfig.from_dir(model_dir)
     if str(config.model_type).lower() not in _SUPPORTED_MODEL_TYPES:
         raise ValueError(f"Gemma does not support model_type={config.model_type!r}")
     precision = str(request.precision).lower()

@@ -504,6 +504,11 @@ void test_gemma4_cache_geometry_and_chat() {
                   "MTP counters distinguish real accepted and rejected proposals");
             check(cache_view->position() == 5, "MTP commits only accepted causal rows");
         }
+        generation.top_k = 0;
+        const auto default_greedy = pipeline.generate_ids({0}, generation);
+        check(default_greedy.token_ids == std::vector<int32_t>({0, 1, 2, 3, 0}),
+              "unseeded top-k zero retains the existing greedy MTP contract");
+        generation.top_k = 1;
         generation.eos_token_id = 2;
         const auto eos = pipeline.generate_ids({0}, generation);
         check(eos.token_ids == std::vector<int32_t>({0, 1, 2}),
@@ -638,6 +643,20 @@ void test_gemma4_image_contract() {
     for (std::size_t i = 0; i < pixels.size(); ++i)
         pixels[i] = static_cast<uint8_t>(i);
     trtmc::GemmaImageConfig config{1, 2, 4, 8, 20, 21, 22};
+    check(config.valid_token_ids(32), "image markers are inside the target vocabulary");
+    for (auto field : {&trtmc::GemmaImageConfig::image_token, &trtmc::GemmaImageConfig::begin_token,
+                       &trtmc::GemmaImageConfig::end_token}) {
+        auto invalid = config;
+        for (const int token : {-1, 32}) {
+            invalid.*field = token;
+            check(!invalid.valid_token_ids(32), "each out-of-vocabulary image marker is rejected");
+        }
+        auto boundary = config;
+        for (const int token : {0, 31}) {
+            boundary.*field = token;
+            check(boundary.valid_token_ids(32), "valid image marker boundaries are retained");
+        }
+    }
     ImageView image{pixels.data(), pixels.size(), 4, 4, 3, ImageFormat::UInt8};
     const auto patches = trtmc::gemma4_image_patches(image, config);
     check(patches.soft_tokens == 4, "image soft-token count follows pooled spatial size");

@@ -288,8 +288,7 @@ ITask* create(const FamilyContext& context) {
             require_value<int>(media, "end_token"),   media.value("merged_patches", false)};
         if (image.patch_size <= 0 || image.patch_size > 64 || image.pooling_kernel < 2 ||
             image.pooling_kernel > 16 || image.soft_tokens <= 0 || image.soft_tokens > 1120 ||
-            image.hidden_size != config.hidden_size || image.image_token < 0 ||
-            image.begin_token < 0 || image.end_token < 0)
+            image.hidden_size != config.hidden_size || !image.valid_token_ids(config.vocab_size))
             throw std::runtime_error("Gemma4 invalid vision configuration");
         vision = std::make_unique<GemmaVisionEncoder>(
             load_engine(context.backend, require_section(context.reader, "vision.plan"),

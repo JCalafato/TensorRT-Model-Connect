@@ -364,6 +364,11 @@ def build(request, writer, config, *, companion=None, companion_variant="mtp"):
     """Build the decoder and requested native image/audio towers."""
     from .model import _BUNDLE_FILES, _runtime_config
 
+    for name, default in (("fp32_layers", ()), ("mtp_seq_len", None),
+                          ("graph_transform", None)):
+        if getattr(request, name) != default:
+            raise NotImplementedError(f"Gemma4 native does not support {name}")
+
     raw = text_config(config)
     unified = config.model_type in {"gemma4_unified", "gemma4_unified_text"}
     include_vision = request.task in {"images_text_to_text", "image_audio_text_to_text"}

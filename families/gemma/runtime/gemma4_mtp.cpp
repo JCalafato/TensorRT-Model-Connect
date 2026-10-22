@@ -11,6 +11,7 @@
 #include <cmath>
 #include <iostream>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 
 namespace trtmc {
@@ -115,8 +116,12 @@ void GemmaTextGenerationPipeline::run_mtp_loop(GemmaISampler* sampler,
         return eos || emitted >= maximum ||
                should_stop_on_answer(output, prompt_count, cfg, emitted, interval, eos);
     };
+    std::optional<int32_t> correction;
     while (emitted < maximum) {
-        const auto pending = sampler->sample(logits.data(), config_.vocab_size, params).token_id;
+        const auto pending =
+            correction ? *correction
+                       : sampler->sample(logits.data(), config_.vocab_size, params).token_id;
+        correction.reset();
         if (emit(pending))
             break;
         const auto proposal = propose_mtp(pending);
@@ -132,17 +137,19 @@ void GemmaTextGenerationPipeline::run_mtp_loop(GemmaISampler* sampler,
         consume(pending);
         ++mtp_stats_.verified;
         const auto expected = sampler->sample(logits.data(), config_.vocab_size, params).token_id;
+        correction = expected;
         if (proposal == expected) {
             ++mtp_stats_.accepted;
             // The final emitted token need not be cached. At the capacity
             // boundary, the verified pending row predicts it next iteration.
             if (room >= 2) {
+                correction.reset();
                 consume(proposal);
                 if (emit(proposal))
                     break;
             }
         }
-        // On rejection, the pending row predicts the correction next iteration.
+        // Reuse the verified correction after rejection or at the capacity boundary.
     }
     std::clog << "Gemma4 native MTP: proposed=" << mtp_stats_.proposed
               << " accepted=" << mtp_stats_.accepted << " verified=" << mtp_stats_.verified << '\n';

@@ -16,6 +16,11 @@ struct GemmaImageConfig {
     int patch_size{0}, pooling_kernel{0}, soft_tokens{0}, hidden_size{0};
     int image_token{0}, begin_token{0}, end_token{0};
     bool merged_patches{false};
+
+    bool valid_token_ids(int vocab_size) const {
+        return image_token >= 0 && image_token < vocab_size && begin_token >= 0 &&
+               begin_token < vocab_size && end_token >= 0 && end_token < vocab_size;
+    }
 };
 
 struct GemmaImagePatches {

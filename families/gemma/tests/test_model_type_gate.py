@@ -70,11 +70,28 @@ def test_a_later_gemma_generation_is_refused(tmp_path: Path, monkeypatch) -> Non
 
     monkeypatch.setattr(standalone, "try_build", lambda *_: False)
     seen = []
+    native_build = gemma4_text.build
     monkeypatch.setattr(gemma4_text, "build",
                         lambda request, writer, config: seen.append(config.model_type))
     for model_type in ("gemma4", "gemma4_text", "gemma4_unified", "gemma4_unified_text"):
         _build(_model_dir(tmp_path / model_type, model_type))
     assert seen == ["gemma4", "gemma4_text", "gemma4_unified", "gemma4_unified_text"]
+    monkeypatch.setattr(gemma4_text, "build", native_build)
+    from dataclasses import replace
+    from families.gemma.config import ModelConfig
+
+    for model_type in seen:
+        directory = tmp_path / model_type
+        request = BuildRequest(directory, directory / "out.bundle", "gemma",
+                               "text_generation", "fp16")
+        config = ModelConfig.from_dir(directory)
+        for field, value in (("fp32_layers", (0,)), ("mtp_seq_len", 2),
+                             ("graph_transform", lambda *args: None)):
+            unsupported = replace(request, **{field: value})
+            with pytest.raises(NotImplementedError, match=field):
+                build_family(unsupported, writer=None)
+            with pytest.raises(NotImplementedError, match=field):
+                native_build(unsupported, None, config)
     for model_type in ("gemma3n",):
         directory = _model_dir(tmp_path / model_type, model_type)
         with pytest.raises(ValueError, match=re.escape(f"model_type={model_type!r}")):
