@@ -18,7 +18,7 @@ class _TorchShardReader:
         try:
             import torch
         except ImportError as error:
-            raise RuntimeError("InternVL PyTorch checkpoint loading requires torch>=2.6") from error
+            raise RuntimeError("InternVL PyTorch checkpoint loading requires torch>=2.10.0") from error
 
         self.tensors = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
 

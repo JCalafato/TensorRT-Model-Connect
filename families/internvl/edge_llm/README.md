@@ -186,8 +186,9 @@ output-parity test with the single-engine layout on SM80.
 Published group128 GEMM AWQ checkpoints now have a native checkpoint-loading
 path, including their original tensor-only PyTorch shards and vision/projector
 names. Install the owning `families/internvl/requirements.txt` dependencies;
-the shard reader uses PyTorch's restricted `weights_only=True` loader and
-memory mapping. It reconstructs the same quantized weight values for ordinary TensorRT
+PyTorch 2.10.0 or newer is required for the restricted `weights_only=True`
+checkpoint loader and memory mapping. Older versions are affected by
+[GHSA-63cw-57p8-fm3p](https://github.com/pytorch/pytorch/security/advisories/GHSA-63cw-57p8-fm3p). It reconstructs the same quantized weight values for ordinary TensorRT
 matmuls; it does not replace the checkpoint with unquantized source weights.
 This representation requires more memory than packed INT4 and does not promise
 Edge INT4-kernel performance. No AWQ CUDA kernel or ONNX conversion is introduced.
