@@ -80,11 +80,15 @@ def _swiglu_mlp(
                   weights[f"{prefix}.w_gate"], f"{prefix}.w_gate")
     up = matmul(inp, hidden, mlp_size,
                 weights[f"{prefix}.w_up"], f"{prefix}.w_up")
-    sigmoid = network.add_activation(gate, trt.ActivationType.SIGMOID)
+    # SiLU evaluates its scalar operation in FP32 and rounds once to the
+    # requested dtype, rather than rounding the intermediate sigmoid to FP16.
+    gate_math = graph_ops._cast_back_to_trt_dtype(network, gate, trt.float32)
+    sigmoid = network.add_activation(gate_math, trt.ActivationType.SIGMOID)
     swish = network.add_elementwise(
-        gate, sigmoid.get_output(0), trt.ElementWiseOperation.PROD)
+        gate_math, sigmoid.get_output(0), trt.ElementWiseOperation.PROD)
+    swish_t = graph_ops._cast_back_to_trt_dtype(network, swish.get_output(0), gate.dtype)
     gated = network.add_elementwise(
-        swish.get_output(0), up, trt.ElementWiseOperation.PROD)
+        swish_t, up, trt.ElementWiseOperation.PROD)
     mlp_out = matmul(gated.get_output(0), mlp_size, hidden,
                      weights[f"{prefix}.w_down"], f"{prefix}.w_down")
     return mlp_out

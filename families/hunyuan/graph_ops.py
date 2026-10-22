@@ -59,12 +59,19 @@ def add_matmul_rhs_constant(
         np.asarray(rhs_weights).reshape(rhs_shape),
         dtype=dtype,
     )
-    rhs = _cast_back_to_trt_dtype(network, rhs, lhs.dtype)
+    output_dtype = lhs.dtype
+    rhs = _cast_back_to_trt_dtype(network, rhs, output_dtype)
+    # Keep requested storage/IO precision, but accumulate the projection in
+    # FP32. A low-precision reduction loses accuracy before attention even
+    # when its input and checkpoint weights match the independent reference.
+    if output_dtype in (trt.float16, trt.bfloat16):
+        lhs = network.add_cast(lhs, trt.float32).get_output(0)
+        rhs = network.add_cast(rhs, trt.float32).get_output(0)
     mm = network.add_matrix_multiply(
         lhs, trt.MatrixOperation.NONE,
         rhs, trt.MatrixOperation.NONE,
     )
-    return _cast_back_to_trt_dtype(network, mm.get_output(0), lhs.dtype)
+    return _cast_back_to_trt_dtype(network, mm.get_output(0), output_dtype)
 
 
 def add_bias_sum(
@@ -115,8 +122,11 @@ def add_rms_norm(
     normalized = network.add_elementwise(
         inp, recip.get_output(0), trt.ElementWiseOperation.PROD)
     gamma_t = add_constant(network, (1, hidden_size), gamma, dtype=np.float32)
+    # Hunyuan rounds normalized activations before applying the norm weight.
+    normalized_t = _cast_back_to_trt_dtype(network, normalized.get_output(0), output_dtype)
+    gamma_t = _cast_back_to_trt_dtype(network, gamma_t, output_dtype)
     scaled = network.add_elementwise(
-        normalized.get_output(0), gamma_t, trt.ElementWiseOperation.PROD)
+        normalized_t, gamma_t, trt.ElementWiseOperation.PROD)
     result = scaled.get_output(0)
     if need_cast:
         result = _cast_back_to_trt_dtype(network, result, output_dtype)
@@ -170,8 +180,11 @@ def add_rms_norm_per_head(
         gamma_t = add_constant(
             network, (1, num_heads, head_dim),
             gamma_arr.reshape(num_heads, head_dim), dtype=np.float32)
+    # Hunyuan rounds normalized activations before applying the norm weight.
+    normalized_t = _cast_back_to_trt_dtype(network, normalized.get_output(0), output_dtype)
+    gamma_t = _cast_back_to_trt_dtype(network, gamma_t, output_dtype)
     scaled = network.add_elementwise(
-        normalized.get_output(0), gamma_t, trt.ElementWiseOperation.PROD)
+        normalized_t, gamma_t, trt.ElementWiseOperation.PROD)
 
     result = scaled.get_output(0)
     if need_cast:
@@ -667,11 +680,11 @@ def add_attention_core(
     scale: float | None = None,
     fp32_accumulation: bool = False,
 ) -> trt.ITensor:
-    """Scaled dot-product attention via TRT native IAttention layer.
+    """Scaled dot-product attention using native TensorRT operations.
 
-    Replaces the manual Q@K^T → scale → softmax → @V chain.  TRT 10 fuses
-    this into a single kernel when available; ``decomposable=True`` permits
-    TensorRT to lower the same operation into primitives.
+    Explicit additive masks use the mathematical matmul/softmax graph below.
+    Unmasked attention uses IAttention with ``decomposable=True``, permitting
+    TensorRT to lower the operation into primitives when needed.
 
     NOTE: TRT IAttention computes raw BMM1 = Q @ K^T without any built-in
     1/sqrt(D) scaling.  We pre-scale Q by 1/sqrt(D) so that the fused kernel
@@ -696,13 +709,16 @@ def add_attention_core(
     Returns:
         Context tensor [B, H, q_seq, D].
     """
+    if mask is not None:
+        if causal:
+            raise ValueError("causal attention and an explicit mask are mutually exclusive")
+        return _add_masked_attention(network, q_4d, k_4d, v_4d, mask, scale)
+
     output_dtype = q_4d.dtype
     if fp32_accumulation and output_dtype != trt.float32:
         q_4d = network.add_cast(q_4d, trt.float32).get_output(0)
         k_4d = network.add_cast(k_4d, trt.float32).get_output(0)
         v_4d = network.add_cast(v_4d, trt.float32).get_output(0)
-        if mask is not None and mask.dtype != trt.float32:
-            mask = network.add_cast(mask, trt.float32).get_output(0)
 
     # Pre-scale Q: TRT IAttention does not apply score scaling itself.
     # Match the scale constant's dtype to Q's dtype: in strongly-typed networks
@@ -726,11 +742,8 @@ def add_attention_core(
         causal,
     )
     # Allow TRT to decompose into primitive ops when no fused kernel is
-    # available (e.g. unsupported head-dim or dtype).  This guarantees
-    # correctness on any configuration at the cost of potential performance.
+    # available (e.g. unsupported head-dim or dtype).
     attn.decomposable = True
-    if mask is not None and not causal:
-        attn.mask = mask
     return _cast_back_to_trt_dtype(network, attn.get_output(0), output_dtype)
 
 
@@ -808,6 +821,59 @@ def _repeat_kv_heads_4d(
     concat = network.add_concatenation(repeated)
     concat.axis = 1
     return concat.get_output(0)
+
+
+def _add_masked_attention(
+    network: trt.INetworkDefinition,
+    q: trt.ITensor,
+    k: trt.ITensor,
+    v: trt.ITensor,
+    mask: trt.ITensor,
+    scale: float | None,
+) -> trt.ITensor:
+    """Additive-mask GQA with explicit FP32 score and softmax arithmetic.
+
+    Keep the mathematical graph independent of hardware and TensorRT version.
+    The IAttention mask path can fail during decode compilation; primitive
+    matmul, mask addition and softmax express the same operation while leaving
+    lowering and tactic selection to TensorRT. KV cache storage stays compact.
+    """
+    output_dtype = q.dtype
+    num_heads, head_dim = q.shape[1], q.shape[3]
+    num_kv_heads = k.shape[1]
+    k = _repeat_kv_heads_4d(
+        network, k, num_heads=num_heads, num_kv_heads=num_kv_heads,
+        head_dim=head_dim)
+    v = _repeat_kv_heads_4d(
+        network, v, num_heads=num_heads, num_kv_heads=num_kv_heads,
+        head_dim=head_dim)
+    q = _cast_back_to_trt_dtype(network, q, trt.float32)
+    k = _cast_back_to_trt_dtype(network, k, trt.float32)
+    mask = _cast_back_to_trt_dtype(network, mask, output_dtype)
+    scores = network.add_matrix_multiply(
+        q, trt.MatrixOperation.NONE, k, trt.MatrixOperation.TRANSPOSE).get_output(0)
+    scores = _cast_back_to_trt_dtype(network, scores, output_dtype)
+    # HF promotes a Python scale to FP32 operation math, not an FP16 constant.
+    scores = _cast_back_to_trt_dtype(network, scores, trt.float32)
+    scale_t = _scalar_constant_for_trt_dtype(
+        network, (1, 1, 1, 1),
+        float(1.0 / np.sqrt(head_dim)) if scale is None else scale, trt.float32)
+    scores = network.add_elementwise(
+        scores, scale_t, trt.ElementWiseOperation.PROD).get_output(0)
+    scores = _cast_back_to_trt_dtype(network, scores, output_dtype)
+    scores = network.add_elementwise(
+        scores, mask, trt.ElementWiseOperation.SUM).get_output(0)
+    scores = _cast_back_to_trt_dtype(network, scores, trt.float32)
+    probabilities = network.add_softmax(scores)
+    probabilities.axes = 1 << 3
+    probabilities = _cast_back_to_trt_dtype(
+        network, probabilities.get_output(0), output_dtype)
+    probabilities = _cast_back_to_trt_dtype(network, probabilities, trt.float32)
+    v = _cast_back_to_trt_dtype(network, v, trt.float32)
+    context = network.add_matrix_multiply(
+        probabilities, trt.MatrixOperation.NONE,
+        v, trt.MatrixOperation.NONE).get_output(0)
+    return _cast_back_to_trt_dtype(network, context, output_dtype)
 
 
 def _add_attention_core_with_logit_softcap(

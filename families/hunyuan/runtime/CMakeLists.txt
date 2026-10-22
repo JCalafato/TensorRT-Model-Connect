@@ -1,8 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+find_package(ICU REQUIRED COMPONENTS uc)
+
 add_library(trtmc_model_hunyuan SHARED
   bpe_tokenizer.cpp
+  mt2_pre_tokenizer.cpp
   chat_templates.cpp
   kv_cache.cpp
   pipeline.cpp
@@ -22,6 +25,7 @@ target_include_directories(trtmc_model_hunyuan SYSTEM PRIVATE
 target_link_libraries(trtmc_model_hunyuan PRIVATE
   trtmc_core
   nlohmann_json::nlohmann_json
+  ICU::uc
   ${TRTMC_CUDART_LIBRARY}
 )
 target_compile_options(trtmc_model_hunyuan PRIVATE
@@ -39,12 +43,16 @@ install(TARGETS trtmc_model_hunyuan
 
 include(edge_llm/Adapter.cmake)
 
-if(TRTMC_BUILD_TESTS AND TARGET EdgeLLM::Core)
+if(TRTMC_BUILD_TESTS)
   add_executable(test_hunyuan_contract
     ${PROJECT_SOURCE_DIR}/families/hunyuan/tests/cpp/test_hunyuan_contract.cpp)
   target_include_directories(test_hunyuan_contract PRIVATE
-    ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/core/runtime/include
-    $<TARGET_PROPERTY:EdgeLLM::Core,INTERFACE_INCLUDE_DIRECTORIES>)
+    ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/core/runtime/include)
+  if(TARGET EdgeLLM::Core)
+    target_compile_definitions(test_hunyuan_contract PRIVATE TRTMC_HAS_EDGE_LLM=1)
+    target_include_directories(test_hunyuan_contract PRIVATE
+      $<TARGET_PROPERTY:EdgeLLM::Core,INTERFACE_INCLUDE_DIRECTORIES>)
+  endif()
   target_link_libraries(test_hunyuan_contract PRIVATE
     trtmc_model_hunyuan trtmc_core nlohmann_json::nlohmann_json ${TRTMC_CUDART_LIBRARY})
   add_test(NAME test_hunyuan_contract COMMAND test_hunyuan_contract)

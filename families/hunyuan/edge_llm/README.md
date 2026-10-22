@@ -71,8 +71,31 @@ Unicode and BPE boundary cases, and near-limit inputs. It does not replace
 the owning model quality checks. Upstream smoke passes alone are never Model
 Connect quality qualification.
 
-A separate full-checkpoint Hy-MT2-1.8B native FP16 fallback build currently
-hits a TensorRT attention-compiler internal assertion during decode compilation
-(expected three live inputs, found four). This is distinct from the upstream
-Edge tokenizer failure; neither full native FP16 nor runtime quality is qualified
-by the successful tiny FP32 math check. The compiler cause is not yet reduced.
+## Native fallback validation
+
+Hy-MT2-1.8B (SM80), Hy-MT2-7B and Hy-MT1.5-7B (SM86) each pass both
+owning translations through the native TensorRT builder and Model Connect
+C++ runtime with the Edge SDK absent: FP16, TP1/batch1, context1024,
+TensorRT 11.1. All six requests match the independent FP32 reference token IDs
+and text exactly; the existing 0.15 normalized edit-distance and semantic
+gates are unchanged. These results do not qualify other capacities, sampling
+policies, precisions or platforms.
+
+The former decode compiler assertion was reduced to a single masked
+IAttention layer. The family now expresses explicit-mask attention with native
+TensorRT mathematical primitives. Projection and attention reductions use
+FP32 accumulation, with requested low-precision outputs and cache storage;
+normalization, scalar scaling and SiLU preserve the family's rounding order.
+TensorRT still owns lowering and tactics. There is no GPU- or version-specific
+native graph branch and no ONNX conversion.
+
+The native tokenizer also owns the exact Hy-MT2 three-Split sequence, using
+ICU Unicode categories and the checkpoint's unchanged BPE vocabulary/merges.
+Unknown base symbols are omitted before merging, matching the checkpoint
+policy. The existing tokenizer/request contract test runs without the Edge SDK.
+The Edge adapter remains separate and unchanged.
+
+The original tiny FP32 math test passes unchanged. An additional private
+matching-precision FP16 diagnostic has small per-logit differences and remains
+a recorded numerical investigation, not a new CI gate. Full-model translation
+parity is not claimed as proof of general logit equivalence.

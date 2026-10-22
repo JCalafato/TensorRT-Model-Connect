@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "families/hunyuan/runtime/mt2_pre_tokenizer.h"
 #include "families/hunyuan/runtime/tokenizer.h"
 
 #include <algorithm>
@@ -836,7 +837,9 @@ class BpeTokenizer final : public ITokenizer {
 
     void encode_bytelevel(const std::string& text, std::vector<int32_t>& result) const {
         std::vector<std::string> words;
-        if (!mUsePreTokenizer) {
+        if (mMt2Sequence) {
+            words = hunyuan::split_mt2(text);
+        } else if (!mUsePreTokenizer) {
             words = fallback_pre_tokenize(text);
         } else if (mPreTokenizerVariant == pretok::Variant::kBloom) {
             words = pretok::bloom_pre_tokenize(text);
@@ -846,6 +849,13 @@ class BpeTokenizer final : public ITokenizer {
 
         for (const auto& word : words) {
             auto chars = byte_encode(word);
+            // This checkpoint omits unavailable base symbols before BPE merges.
+            if (mMt2Sequence) {
+                chars.erase(
+                    std::remove_if(chars.begin(), chars.end(),
+                                   [&](const auto& ch) { return mTokenToId.count(ch) == 0; }),
+                    chars.end());
+            }
             if (!chars.empty() && !mEndOfWordSuffix.empty()) {
                 chars.back() += mEndOfWordSuffix;
             }
@@ -1261,6 +1271,9 @@ class BpeTokenizer final : public ITokenizer {
 
         if (pt_type == "ByteLevel") {
             mPreTokenizerVariant = pretok::Variant::kHunyuan;
+        } else if (pt_type == "Sequence" && hunyuan::is_mt2_sequence(pt)) {
+            hunyuan::validate_mt2_tokenizer(j);
+            mMt2Sequence = true;
         } else if (pt_type == "Sequence") {
             int digit_group = 0;
             mPreTokenizerVariant = detect_split_variant(pt, digit_group);
@@ -1528,6 +1541,7 @@ class BpeTokenizer final : public ITokenizer {
     std::vector<std::pair<std::string, int32_t>> mAddedTokenPatterns;
 
     bool mAddSpecialTokens = false;
+    bool mMt2Sequence = false;
     bool mUsePreTokenizer = true;
     bool mIsMetaspace = false; // Set by detect_pre_tokenizer.
     bool mIsSentencePiece = false;

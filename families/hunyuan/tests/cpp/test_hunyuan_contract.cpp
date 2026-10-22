@@ -3,8 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "families/hunyuan/runtime/chat_templates.h"
+#include "families/hunyuan/runtime/mt2_pre_tokenizer.h"
+#ifdef TRTMC_HAS_EDGE_LLM
 #include "families/hunyuan/runtime/edge_llm/request.h"
 #include "families/hunyuan/runtime/edge_llm/tokenizer.h"
+#endif
 #include "families/hunyuan/runtime/pipeline.h"
 
 #include <cstdlib>
@@ -67,7 +70,9 @@ void test_native_contracts() {
 }
 
 void test_mt2_preprocessing() {
+#ifdef TRTMC_HAS_EDGE_LLM
     using trtmc::hunyuan::edge_llm::make_mt2_pre_tokenizer;
+#endif
     const auto config = nlohmann::json::parse(R"json({
   "type": "Sequence",
   "pretokenizers": [
@@ -103,10 +108,16 @@ void test_mt2_preprocessing() {
     }
   ]
 })json");
+    require(trtmc::hunyuan::is_mt2_sequence(config));
+#ifdef TRTMC_HAS_EDGE_LLM
     const auto pre = make_mt2_pre_tokenizer(config);
+#endif
     const auto check = [&](const std::string& input, std::vector<std::string> expected) {
-        const auto pieces = pre->process(input);
+        const auto pieces = trtmc::hunyuan::split_mt2(input);
         require(pieces == expected);
+#ifdef TRTMC_HAS_EDGE_LLM
+        require(pre->process(input) == expected);
+#endif
         std::string reconstructed;
         for (const auto& piece : pieces)
             reconstructed += piece;
@@ -133,17 +144,26 @@ void test_mt2_preprocessing() {
          {std::string("\xC0\xAF"), std::string("\xE0\x80\xAF"), std::string("\xF0\x80\x80\xAF"),
           std::string("\xED\xA0\x80"), std::string("\xF4\x90\x80\x80"), std::string("\x80"),
           std::string("\xC2")})
-        rejects([&] { pre->process(bad); });
+        rejects([&] { trtmc::hunyuan::split_mt2(bad); });
     auto unknown = config;
     unknown["pretokenizers"][0]["pattern"]["Regex"] = "\\p{N}{1,2}";
+    require(!trtmc::hunyuan::is_mt2_sequence(unknown));
+#ifdef TRTMC_HAS_EDGE_LLM
     rejects([&] { make_mt2_pre_tokenizer(unknown); });
+#endif
     unknown = config;
     unknown["pretokenizers"][1]["behavior"] = "Removed";
+    require(!trtmc::hunyuan::is_mt2_sequence(unknown));
+#ifdef TRTMC_HAS_EDGE_LLM
     rejects([&] { make_mt2_pre_tokenizer(unknown); });
+#endif
     unknown = config;
     unknown["pretokenizers"][3]["use_regex"] = true;
+    require(!trtmc::hunyuan::is_mt2_sequence(unknown));
+#ifdef TRTMC_HAS_EDGE_LLM
     rejects([&] { make_mt2_pre_tokenizer(unknown); });
-    rejects([&] { pre->process(std::string(1024 * 1024 + 1, 'a')); });
+#endif
+    rejects([&] { trtmc::hunyuan::split_mt2(std::string(1024 * 1024 + 1, 'a')); });
     check("\u0301", {"\u0301"});
     check("  A", {" ", " A"});
     check(" \t\n  A", {" \t\n", " ", " A"});
@@ -163,15 +183,6 @@ void test_mt2_preprocessing() {
 
     // Tiny synthetic vocabulary checks BPE OOV-before-merge semantics without
     // requiring a downloaded checkpoint in the owning unit-test target.
-    auto pattern = (std::filesystem::temp_directory_path() / "hunyuan-tokenizer-XXXXXX").string();
-    require(mkdtemp(pattern.data()) != nullptr);
-    struct Cleanup {
-        std::filesystem::path path;
-        ~Cleanup() {
-            std::error_code ignored;
-            std::filesystem::remove_all(path, ignored);
-        }
-    } cleanup{pattern};
     nlohmann::json fixture{
         {"normalizer", {{"type", "Sequence"}, {"normalizers", nlohmann::json::array()}}},
         {"pre_tokenizer", config},
@@ -197,6 +208,21 @@ void test_mt2_preprocessing() {
                                            {"rstrip", false},
                                            {"normalized", false},
                                            {"special", true}});
+    const auto serialized = fixture.dump();
+    const auto native = trtmc::CreateBpeTokenizer(serialized.data(), serialized.size());
+    require(native->encode("!\r\n") == std::vector<int32_t>{2});
+    require(native->encode("\r").empty());
+    require(native->encode("<b>!\r\n<e>") == std::vector<int32_t>({4, 2, 5}));
+#ifdef TRTMC_HAS_EDGE_LLM
+    auto pattern = (std::filesystem::temp_directory_path() / "hunyuan-tokenizer-XXXXXX").string();
+    require(mkdtemp(pattern.data()) != nullptr);
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() {
+            std::error_code ignored;
+            std::filesystem::remove_all(path, ignored);
+        }
+    } cleanup{pattern};
     std::ofstream(std::filesystem::path(pattern) / "tokenizer.json") << fixture.dump();
     std::ofstream(std::filesystem::path(pattern) / "tokenizer_config.json")
         << R"({"bos_token":"<b>","eos_token":"<e>"})";
@@ -205,17 +231,21 @@ void test_mt2_preprocessing() {
     require(tokenizer.encode("\r").empty());
     require(tokenizer.encode("<b>!\r\n<e>") == std::vector<int32_t>({4, 2, 5}));
     require(tokenizer.getBosId() == 4 && tokenizer.getEosId() == 5);
+#endif
 }
 } // namespace
 int main() {
+#ifdef TRTMC_HAS_EDGE_LLM
     using namespace trtmc::hunyuan::edge_llm;
+#endif
     try {
         test_native_contracts();
         test_mt2_preprocessing();
+        trtmc::TextGenerationConfig config;
+#ifdef TRTMC_HAS_EDGE_LLM
         require(safe_artifact_path("edge_llm/engine/llm.engine"));
         require(!safe_artifact_path("edge_llm/engine/../escape"));
         require(!safe_artifact_path("/tmp/escape"));
-        trtmc::TextGenerationConfig config;
         config.temperature = 0;
         config.top_k = 1;
         config.use_chat_template = true;
@@ -226,6 +256,7 @@ int main() {
         require(request.maxGenerateLength == 128);
         validate_capacity(25, 512, 1024, 128);
         rejects([] { validate_capacity(500, 512, 512, 128); });
+#endif
         trtmc::HunyuanTextGenConfig native_config;
         native_config.eos_token_ids = {127960, 127967};
         require(trtmc::hunyuan_is_eos(127960, config, native_config));
@@ -237,12 +268,14 @@ int main() {
         config.eos_token_id = -1;
         require(trtmc::hunyuan_apply_chat_template("hunyuan_mt2", "你好", false) ==
                 "<｜hy_begin▁of▁sentence｜><｜hy_User｜>你好<｜hy_Assistant｜>");
+#ifdef TRTMC_HAS_EDGE_LLM
         config.seed = 42;
         rejects([&] { make_request("hello", config, 128); });
         const nlohmann::json tokenizer = {{"post_processor", {{"type", "ByteLevel"}}}};
         require(raw_prompt_prefix({}, tokenizer).empty());
         rejects(
             [] { raw_prompt_prefix({}, {{"post_processor", {{"type", "TemplateProcessing"}}}}); });
+#endif
         require(trtmc::hunyuan_apply_chat_template("hunyuan", "你好", false) ==
                 "<|startoftext|>你好<|extra_0|>");
         std::cout << "Hunyuan request, capacity, tokenizer and chat contracts passed\n";
