@@ -22,6 +22,9 @@ class TrtModuleImplTestPeer {
     static DType from_trt_dtype(nvinfer1::DataType dtype) {
         return TrtModuleImpl::from_trt_dtype(dtype);
     }
+    static void validate_io_tensor_format(nvinfer1::DataType dtype, nvinfer1::TensorFormat format) {
+        TrtModuleImpl::validate_io_tensor_format(dtype, format);
+    }
     static std::size_t allocation_bytes(const nvinfer1::Dims& dims, DType dtype) {
         std::vector<int64_t> shape;
         return TrtModuleImpl::compute_alloc_bytes(dims, dtype, shape);
@@ -55,6 +58,18 @@ void test_fp8_tensor_storage_and_mapping() {
     check(trtmc::TrtModuleImplTestPeer::from_trt_dtype(nvinfer1::DataType::kINT8) ==
               trtmc::DType::kInt8,
           "signed integer storage remains distinct from E4M3");
+    trtmc::TrtModuleImplTestPeer::validate_io_tensor_format(nvinfer1::DataType::kFP8,
+                                                            nvinfer1::TensorFormat::kLINEAR);
+    for (const auto format : {nvinfer1::TensorFormat::kHWC16, nvinfer1::TensorFormat::kCHW32}) {
+        bool rejected = false;
+        try {
+            trtmc::TrtModuleImplTestPeer::validate_io_tensor_format(nvinfer1::DataType::kFP8,
+                                                                    format);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check(rejected, "FP8 vectorized I/O is rejected before byte-buffer allocation");
+    }
 }
 
 trtmc::TrtUniquePtr<nvinfer1::ICudaEngine> build_identity(bool dynamic) {
