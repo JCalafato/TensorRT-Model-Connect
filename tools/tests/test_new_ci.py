@@ -558,7 +558,7 @@ def test_pipeline_exposes_only_active_stages(tmp_path: Path) -> None:
     )
 
 
-def test_package_build_uses_the_preinstalled_offline_toolchain() -> None:
+def test_package_build_uses_the_preinstalled_offline_toolchain(tmp_path, monkeypatch) -> None:
     source = inspect.getsource(WheelPackageManager.build)
     assert '"--no-isolation"' in source
     assert '"build>=1.2"' not in source
@@ -575,6 +575,66 @@ def test_package_build_uses_the_preinstalled_offline_toolchain() -> None:
     dockerfile = (repository / "Dockerfile").read_text()
     assert "openmpi-bin" in dockerfile
     assert "nvidia/nccl/lib" in dockerfile
+    # The final Torch reinstall must not leave CUDA Python with incompatible bindings.
+    cuda_pin = dockerfile.rindex("cuda-python==13.0.3")
+    assert dockerfile.rindex("pip install") < cuda_pin
+    assert dockerfile.index("pip install --force-reinstall") < cuda_pin
+    assert dockerfile.index("&& pip check", cuda_pin) > cuda_pin
+    repair_step = dockerfile.index("&& python3.12 /tmp/trtmc-docker-image.py repair-cusparselt-wheel")
+    assert cuda_pin < repair_step < dockerfile.index("&& pip check")
+    assert "!tools/ci/docker_image.py" in (repository / ".dockerignore").read_text()
+
+    import csv
+    import hashlib
+    from tools.ci import docker_image as repair
+
+    info = tmp_path / "nvidia_cusparselt_cu13-0.8.1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Name: nvidia-cusparselt-cu13\nVersion: 0.8.1\n")
+    library = tmp_path / repair._LIBRARY
+    library.parent.mkdir(parents=True)
+    payload = bytearray(64)
+    payload[:6] = b"\x7fELF\x02\x01"
+    payload[18:20] = (183).to_bytes(2, "little")
+    library.write_bytes(payload)
+    monkeypatch.setattr(repair, "_LIBRARY_SIZE", len(payload))
+    monkeypatch.setattr(repair, "_LIBRARY_SHA256", hashlib.sha256(payload).hexdigest())
+    monkeypatch.setattr(repair.platform, "machine", lambda: "aarch64")
+    distribution = repair.metadata.PathDistribution(info)
+    monkeypatch.setattr(repair.metadata, "distribution", lambda _name: distribution)
+    original = ("Wheel-Version: 1.0\n" + repair._BAD_TAG).encode()
+    wheel = info / "WHEEL"
+    wheel.write_bytes(original)
+    original_record = f"{info.name}/WHEEL,{repair._record_hash(original)},{len(original)}\n"
+    original_record += f"{repair._LIBRARY},{repair._record_hash(payload)},{len(payload)}\n"
+    record = info / "RECORD"
+    record.write_text(original_record)
+    assert repair.repair_cusparselt_wheel()
+    corrected = original.replace(repair._BAD_TAG.encode(), repair._GOOD_TAG.encode())
+    assert wheel.read_bytes() == corrected
+    assert library.read_bytes() == payload
+    rows = list(csv.reader(io.StringIO(record.read_text())))
+    assert rows[0][1:] == [repair._record_hash(corrected), str(len(corrected))]
+    assert rows[1][1:] == [repair._record_hash(payload), str(len(payload))]
+    assert not repair.repair_cusparselt_wheel()  # Already-correct metadata is unchanged.
+
+    wheel.write_bytes(original)
+    record.write_text(original_record)
+    library.write_bytes(payload[:-1] + b"x")
+    with pytest.raises(ValueError, match="library digest"):
+        repair.repair_cusparselt_wheel()
+    assert wheel.read_bytes() == original
+    library.write_bytes(payload[:18] + b"\x3e\x00" + payload[20:])
+    with pytest.raises(ValueError, match="AArch64 ELF"):
+        repair.repair_cusparselt_wheel()
+    assert wheel.read_bytes() == original
+    library.write_bytes(payload)
+    record.write_text(original_record.replace(repair._record_hash(original), "sha256=corrupt"))
+    with pytest.raises(ValueError, match="disagrees with RECORD"):
+        repair.repair_cusparselt_wheel()
+    assert wheel.read_bytes() == original
+    monkeypatch.setattr(repair.platform, "machine", lambda: "x86_64")
+    assert not repair.repair_cusparselt_wheel()
 
 
 def test_internal_ci_image_supports_embedded_workflow_shell_regressions() -> None:

@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements/base.txt /tmp/trtmc-base-requirements.txt
+COPY tools/ci/docker_image.py /tmp/trtmc-docker-image.py
 RUN python3.12 -m venv "$VIRTUAL_ENV" \
     && pip install --upgrade pip \
     && pip install \
@@ -77,7 +78,9 @@ RUN python3.12 -m venv "$VIRTUAL_ENV" \
       "torchvision==0.27.0+cu130" \
       "torchaudio==2.11.0+cu130" \
       --index-url https://download.pytorch.org/whl/cu130 \
-    && pip install "setuptools>=80,<82"
+    && pip install "setuptools>=80,<82" "cuda-python==13.0.3" \
+    && python3.12 /tmp/trtmc-docker-image.py repair-cusparselt-wheel \
+    && pip check
 
 ENV TRT_LIB_DIR=/opt/venv/lib/python3.12/site-packages/tensorrt_libs
 ENV NCCL_LIB_DIR=/opt/venv/lib/python3.12/site-packages/nvidia/nccl/lib
