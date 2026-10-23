@@ -259,7 +259,7 @@ create_nemotron_h_sampler(const NemotronHSamplingParams& params) {
 
 bool nemotron_h_is_greedy(const NemotronHSamplingParams& params) {
     const float top_p = sanitized_top_p(params.top_p);
-    return greedy_equivalent(params) || params.top_k == 1 ||
+    return greedy_equivalent(params) || (params.top_k == 1 && !top_p_enabled(top_p)) ||
            (params.top_k <= 1 && top_p >= 1.0F - kSamplingEpsilon &&
             sanitized_min_p(params.min_p) <= 0.0F && params.seed < 0);
 }

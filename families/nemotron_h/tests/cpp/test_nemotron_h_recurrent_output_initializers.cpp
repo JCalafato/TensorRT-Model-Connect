@@ -141,8 +141,26 @@ void test_every_declared_eos_token_stops_generation() {
                   trtmc::nemotron_h_sample_probabilities(probabilities, second),
               "paired RNG reproduces an explicit seed");
     params.top_k = 1;
+    check(!trtmc::nemotron_h_is_greedy(params),
+          "top-k one with an active nucleus filter is not greedy");
+    const auto nucleus = trtmc::nemotron_h_probabilities(logits.data(), 16, params);
+    check(nucleus[7] > 0.0F && nucleus[7] < 1.0F,
+          "paired nucleus distribution retains more than the argmax token");
+    auto ordinary = trtmc::create_nemotron_h_sampler(params);
+    for (int i = 0; i < 8; ++i) {
+        const auto sampled = ordinary->sample(logits.data(), 16, params);
+        check(nucleus[sampled.token_id] > 0.0F &&
+                  std::abs(std::log(nucleus[sampled.token_id]) - sampled.logprob) < 1e-6F,
+              "paired nucleus probabilities match the ordinary sampler");
+    }
+    params.top_p = 1.0F;
     check(trtmc::nemotron_h_is_greedy(params),
-          "top-k one remains greedy with a nucleus filter and explicit seed");
+          "top-k one remains greedy without a nucleus filter and with an explicit seed");
+    const auto top_one = trtmc::nemotron_h_probabilities(logits.data(), 16, params);
+    check(top_one[7] == 1.0F, "top-k one without nucleus filtering remains exact argmax");
+    check(trtmc::nemotron_h_is_greedy(trtmc::NemotronHSamplingParams{}),
+          "the default paired request remains greedy");
+    params.top_p = 0.9F;
     params.temperature = 0;
     const auto greedy = trtmc::nemotron_h_probabilities(logits.data(), 16, params);
     check(greedy[7] == 1 && trtmc::nemotron_h_sample_probabilities(greedy, first) == 7,
