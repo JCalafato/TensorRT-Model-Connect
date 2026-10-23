@@ -131,14 +131,34 @@ for exact checkpoints, commands, platform limits, and evidence scope. Local
 profile results do not imply registered CI or catalog-wide qualification.
 
 
+### Qwen3.6 / Qwen3.8 native fallback
+
+Without compatible Edge offload, the owner constructs TensorRT graphs directly
+and runs them through the Model Connect C++ runtime, without native ONNX export.
+Prepared source quantization and exported FP8 KV scales are preserved. Native
+paths cover ordinary text/media, embedded MTP, complete DSpark/DFlash2 companions,
+and original FP16 TP2; they do not silently substitute target-only decoding.
+
+Exact full-checkpoint and small integration results are distinguished in the
+[family recipe](https://github.com/NVIDIA/TensorRT-Model-Connect/blob/main/families/qwen3_8/edge_llm/README.md#native-fallback).
+Original Qwen3.6 and mixed-quantized accuracy failures remain runnable with the
+unchanged reference gates. Prepared MTP, AWQ-DFlash2, and exported FP8 KV have
+small integration evidence, not full-checkpoint qualification. Test GPU types
+are evidence scope, not a native family allowlist.
+
 ### Qwen3.8 native multi-token prefill
 
-A native Qwen3.8 bundle ships a multi-token prefill engine
+A compatible native Qwen3.8 TP1 text bundle ships a multi-token prefill engine
 (`prefill_engine.plan`) next to the one-token decode engine. The runtime feeds
 the prompt `--prefill-chunk-len` tokens per call (default 128; the last chunk may
 be partial) instead of running one decoder step per prompt token. Projections,
 norms and MLPs run as GEMMs over the chunk, Gated DeltaNet layers use the chunked
 delta rule, and full-attention layers use one masked attention over the chunk.
+
+Explicit `--prefill-chunk-len` is native-owned and bypasses Edge offload. Native
+media, external drafts, TP2, exported FP8 KV, and prepared MTP projections use
+per-token prefill to retain their exact input/state contract. For these modes,
+omit the option or use zero; an explicit positive chunk size is rejected.
 Bundles with an embedded MTP head also ship `mtp_prefill_engine.plan`, which
 warms the MTP cache for a whole chunk in one call.
 
