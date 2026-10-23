@@ -140,33 +140,20 @@ class TensorParallelTask final : public ITextGeneration,
   public:
     TensorParallelTask(NativeRankFactory factory, bool media)
         : factory_(std::move(factory)), media_(media) {
-        initialize();
+        try {
+            initialize();
+            cache_task_metadata();
+        } catch (...) {
+            clear();
+            throw;
+        }
     }
     ~TensorParallelTask() { clear(); }
     const char* task() const noexcept override {
         return media_ ? "images_text_to_text" : "text_generation";
     }
-    int32_t default_max_new_tokens() const override {
-        return dynamic_cast<ITextGeneration&>(*ranks_[0]).default_max_new_tokens();
-    }
-    std::vector<api::TaskInstance> task_bindings() override {
-        if (!media_)
-            return {}; // Core retains its established legacy text bridge.
-        auto fields = dynamic_cast<api::IModel&>(*ranks_[0]).task_bindings();
-        for (auto& field : fields) {
-            if (field.key.id == api::ITextContinuation::kTask)
-                field.implementation = static_cast<api::ITextContinuation*>(this);
-            else if (field.key.id == api::IImagesTextToText::kTask)
-                field.implementation = static_cast<api::IImagesTextToText*>(this);
-            else if (field.key.id == api::IVideoTextToText::kTask)
-                field.implementation = static_cast<api::IVideoTextToText*>(this);
-            else if (field.key.id == api::IImageVideoTextToText::kTask)
-                field.implementation = static_cast<api::IImageVideoTextToText*>(this);
-            else
-                throw std::runtime_error("Unexpected Qwen native rank task contract");
-        }
-        return fields;
-    }
+    int32_t default_max_new_tokens() const override { return default_max_new_tokens_; }
+    std::vector<api::TaskInstance> task_bindings() override { return bindings_; }
     TextResult generate(const std::string& text, const TextGenerationConfig& cfg) override {
         return invoke(
             [&](ITask& rank) { return dynamic_cast<ITextGeneration&>(rank).generate(text, cfg); });
@@ -193,6 +180,28 @@ class TensorParallelTask final : public ITextGeneration,
     }
 
   private:
+    void cache_task_metadata() {
+        default_max_new_tokens_ =
+            dynamic_cast<ITextGeneration&>(*ranks_[0]).default_max_new_tokens();
+        if (!media_)
+            return; // Core retains its established legacy text bridge.
+        // NativeMediaTask supplies static field schemas. Retain them and bind to
+        // this wrapper, not to ranks that may be replaced during recovery.
+        auto fields = dynamic_cast<api::IModel&>(*ranks_[0]).task_bindings();
+        for (auto& field : fields) {
+            if (field.key.id == api::ITextContinuation::kTask)
+                field.implementation = static_cast<api::ITextContinuation*>(this);
+            else if (field.key.id == api::IImagesTextToText::kTask)
+                field.implementation = static_cast<api::IImagesTextToText*>(this);
+            else if (field.key.id == api::IVideoTextToText::kTask)
+                field.implementation = static_cast<api::IVideoTextToText*>(this);
+            else if (field.key.id == api::IImageVideoTextToText::kTask)
+                field.implementation = static_cast<api::IImageVideoTextToText*>(this);
+            else
+                throw std::runtime_error("Unexpected Qwen native rank task contract");
+        }
+        bindings_ = std::move(fields);
+    }
     void clear() noexcept {
         for (int rank = 0; rank < 2; ++rank) {
             int previous = 0;
@@ -304,6 +313,8 @@ class TensorParallelTask final : public ITextGeneration,
     }
     NativeRankFactory factory_;
     bool media_;
+    int32_t default_max_new_tokens_{};
+    std::vector<api::TaskInstance> bindings_;
     std::shared_ptr<Communicators> group_;
     std::array<std::unique_ptr<ITask>, 2> ranks_;
     std::atomic<bool> poisoned_{false};
