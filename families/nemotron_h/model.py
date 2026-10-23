@@ -69,7 +69,7 @@ from .checkpoint_mapper import (
 from . import graph_ops
 from . import graph_blocks
 from .parallel import normalize_parallel_config
-from .prepared_quantization import PreparedQuantContext, checkpoint_policy
+from .prepared_quantization import PreparedPolicy, PreparedQuantContext, checkpoint_policy
 
 
 def _parse_layer_types(pattern: str) -> list[str]:
@@ -144,12 +144,16 @@ class _NemotronHModel:
         model_dir: str,
         config: ModelConfig,
         quant_ctx: NemotronHQuantContext | PreparedQuantContext | None = None,
+        *,
+        prepared_policy: PreparedPolicy | None = None,
     ) -> WeightDict:
         model_dir_path = Path(model_dir)
         if isinstance(quant_ctx, NemotronHQuantContext):
             # The dense context owns raw packed projections and their validation.
             # The ordinary mapper reads only its excluded full-precision tensors.
             readers = _open_safetensors(model_dir_path, prepared=False)
+        elif prepared_policy is not None:
+            readers = _open_safetensors(model_dir_path, policy=prepared_policy)
         else:
             readers = _open_safetensors(model_dir_path)
 
@@ -1317,7 +1321,9 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
         assets = native_tokenizer_assets(model_dir, _BUNDLE_FILES)
         model = _NemotronHModel()
         config.raw["_model_dir"] = str(model_dir)
-        weights = model.load_weights(str(model_dir), config, quant_ctx)
+        weights = model.load_weights(
+            str(model_dir), config, quant_ctx, prepared_policy=policy
+        )
         writer.set_header(family="nemotron_h", task=request.task, backend=request.backend)
         if parallel.enabled:
             for rank in range(parallel.tp_size):

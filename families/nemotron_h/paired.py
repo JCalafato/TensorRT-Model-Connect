@@ -48,7 +48,7 @@ def build(request, writer, draft: Path, variant: str) -> None:
     assets = native_tokenizer_assets(model_dir, _BUNDLE_FILES)
     model = _NemotronHModel()
     config.raw["_model_dir"] = str(model_dir)
-    weights = model.load_weights(str(model_dir), config)
+    weights = model.load_weights(str(model_dir), config, prepared_policy=policy)
     writer.set_header(family="nemotron_h", task=request.task, backend=request.backend)
     writer.add_bytes(
         "engine.plan",

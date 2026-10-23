@@ -20,7 +20,7 @@ from safetensors import safe_open
 import ml_dtypes  # noqa: F401
 
 from .prepared_quantization import (
-    PreparedLinear, checkpoint_policy,
+    PreparedLinear, PreparedPolicy, checkpoint_policy,
 )
 
 
@@ -106,11 +106,16 @@ class _ReaderCollection(list):
         self.tensor_map = tensor_map
 
 
-def _open_safetensors(model_dir: Path, *, prepared: bool = True) -> _ReaderCollection:
+def _open_safetensors(
+    model_dir: Path, *, prepared: bool = True, policy: PreparedPolicy | None = None,
+) -> _ReaderCollection:
     """Open the checkpoint's required NumPy safetensors readers."""
     import json
 
-    policy = checkpoint_policy(model_dir) if prepared else None
+    if not prepared:
+        policy = None
+    elif policy is None:
+        policy = checkpoint_policy(model_dir)
 
     def open_reader(path):
         reader = PreparedSafetensorsReader(path)

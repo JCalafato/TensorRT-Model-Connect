@@ -165,17 +165,21 @@ def test_load_weights_raises_for_pattern_length_mismatch(
         model._NemotronHModel().load_weights("/unused", cfg)
 
 
-@pytest.mark.parametrize("algorithm", ["FP8", "NVFP4", "W4A16_NVFP4"])
+@pytest.mark.parametrize("algorithm", ["FP8", "NVFP4", "W4A16_NVFP4", "MIXED_PRECISION"])
 def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatch, algorithm):
     import json
     import ml_dtypes
     from families.nemotron_h.checkpoint_mapper import _open_safetensors, _load_tensor, _transpose_2d
     from families.nemotron_h.prepared_quantization import PreparedLinear
 
+    linear_algorithm = "NVFP4" if algorithm == "MIXED_PRECISION" else algorithm
+    quantization = {"quant_algo": algorithm, "group_size": 16}
+    if algorithm == "MIXED_PRECISION":
+        quantization["quantized_layers"] = {"p": {"quant_algo": "NVFP4", "group_size": 16}}
     (tmp_path / "config.json").write_text(json.dumps({"model_type": "nemotron_h"}))
     (tmp_path / "hf_quant_config.json").write_text(json.dumps({
         "producer": {"name": "modelopt"},
-        "quantization": {"quant_algo": algorithm, "group_size": 16},
+        "quantization": quantization,
     }))
     # Minimal valid safetensors bytes exercise the actual training-framework-free FP8 reader.
     if algorithm == "FP8":
@@ -188,6 +192,7 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatc
     if algorithm != "W4A16_NVFP4":
         values["p.input_scale"] = np.array([.125], np.float32)
     values["bf16_sample"] = np.array([.25, -2.0], dtype=ml_dtypes.bfloat16)
+    values["backbone.embeddings.weight"] = np.ones((32, 32), dtype=np.float32)
     header, payload = {}, bytearray()
     for name, value in values.items():
         offset = len(payload)
@@ -212,7 +217,7 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatc
     weight = _load_tensor(readers, "p.weight")
     assert isinstance(weight, PreparedLinear)
     assert weight.shape == (32, 32)
-    assert weight.format == algorithm.lower()
+    assert weight.format == linear_algorithm.lower()
     np.testing.assert_array_equal(weight.packed, values["p.weight"].view(np.uint8))
     assert weight.input_scale is None if algorithm == "W4A16_NVFP4" else weight.input_scale[0] == .125
     transposed = _transpose_2d(weight, "p")
@@ -238,12 +243,41 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatc
     request.quantization = "fp8" if algorithm == "FP8" else "nvfp4"
     policy, context = model._native_quantization(request, config, tmp_path, "fp16")
     assert policy.request_format == request.quantization
-    if algorithm == "W4A16_NVFP4":
+    if algorithm in {"W4A16_NVFP4", "MIXED_PRECISION"}:
         assert isinstance(context, PreparedQuantContext)
         assert not calls
     else:
         assert context is dense_context
         assert calls == [(tmp_path, request.quantization, ["mamba2"])]
+
+    # Explicit legacy admission must reach the same actual reader without a
+    # second, stricter metadata decision. Automatic admission stays strict.
+    sidecar = tmp_path / "hf_quant_config.json"
+    metadata = json.loads(sidecar.read_text())
+    del metadata["producer"]
+    sidecar.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="ModelOpt metadata"):
+        _open_safetensors(tmp_path)
+    request.quantization = None
+    with pytest.raises(ValueError, match="ModelOpt metadata"):
+        model._native_quantization(request, config, tmp_path, "fp16")
+    request.quantization = "fp8" if algorithm == "FP8" else "nvfp4"
+    config.raw["hybrid_override_pattern"] = "E"
+    policy, context = model._native_quantization(request, config, tmp_path, "fp16")
+    assert isinstance(context, PreparedQuantContext)
+    from families.nemotron_h import checkpoint_mapper
+    def no_second_policy_read(*args, **kwargs):
+        pytest.fail("validated prepared policy must not be re-derived during loading")
+    monkeypatch.setattr(checkpoint_mapper, "checkpoint_policy", no_second_policy_read)
+    readers = _open_safetensors(tmp_path, policy=policy)
+    assert readers.tensor_map["p.weight"].policy is policy
+    np.testing.assert_array_equal(_load_tensor(readers, "p.weight").packed, weight.packed)
+    minimal = ModelConfig(model_type="nemotron_h", vocab_size=32, hidden_size=32,
+                          num_hidden_layers=0, raw={})
+    loaded = model._NemotronHModel().load_weights(
+        str(tmp_path), minimal, context, prepared_policy=policy
+    )
+    np.testing.assert_array_equal(loaded["embedding"], values["backbone.embeddings.weight"])
 
 
 def test_prepared_mixed_policy_preserves_activation_precision(tmp_path):
