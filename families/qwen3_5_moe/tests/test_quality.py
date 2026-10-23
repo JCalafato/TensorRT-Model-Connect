@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Strict default quality gate has no short-answer or prefix relaxation."""
+
+import pytest
+from families.qwen3_5_moe.tests.quality import assert_quality, normalized_edit_distance
+
+
+def test_normalization_and_fixed_threshold():
+    assert normalized_edit_distance(" A  B ", "a b") == 0
+    assert normalized_edit_distance("abc", "abd") == 1 / 3
+    assert_quality("abcdefghij", "abcdefghiX")
+    for actual, expected in (
+        ("abcdefghij", "abcdefghXX"),
+        ("Paris", "The answer is Paris"),
+        ("", ""),
+    ):
+        with pytest.raises(AssertionError):
+            assert_quality(actual, expected)
+
+
+@pytest.mark.parametrize("gpu_passed", [True, False, None])
+@pytest.mark.parametrize("reference_passed", [True, False, None])
+def test_independent_quality_requires_both_gates(gpu_passed, reference_passed):
+    """A passing oracle never repairs failed/missing GPU proof or mutates prior evidence."""
+    from families.qwen3_5_moe.tests.quality import combined_evidence
+
+    gpu = {"task": "vision_language_generation", "max_sequence_length": 4096}
+    reference = {}
+    if gpu_passed is not None:
+        gpu["passed"] = gpu_passed
+    if reference_passed is not None:
+        reference["passed"] = reference_passed
+    original_gpu = dict(gpu)
+    result = combined_evidence(gpu, reference)
+    assert result["passed"] is (gpu_passed is True and reference_passed is True)
+    assert result["gpu_passed"] is (gpu_passed is True)
+    assert result["hf_quality"] == ("passed" if reference_passed is True else "failed")
+    assert result["task"] == gpu["task"]
+    assert result["max_sequence_length"] == 4096
+    assert gpu == original_gpu
+
+
+@pytest.mark.parametrize("media", [False, True])
+def test_native_harness_reads_metadata_without_copying_engines(tmp_path, media):
+    """Native E2E uses its actual binding and the same existing raw/image/recovery cases."""
+    from tensorrt_model_connect.bundle_writer import BundleWriter
+    from families.qwen3_5_moe.tests.edge_validation import extract_bundle, requests
+
+    bundle = tmp_path / "native.bundle"
+    writer = BundleWriter(bundle)
+    task = "images_text_to_text" if media else "text_generation"
+    writer.set_header(family="qwen3_5_moe", task=task, backend="trt")
+    writer.add_bytes("engine.plan", b"decoder")
+    writer.add_json("runtime.json", {"max_cache_length": 1024})
+    if media:
+        writer.add_bytes("native_visual.plan", b"visual")
+        writer.add_json("native_visual.json", {"capacity": 1024, "input_limit": 1024})
+    writer.finish()
+    with pytest.raises(ValueError, match="native, not Edge"):
+        extract_bundle(bundle, tmp_path / "edge-only")
+    extracted = tmp_path / "native"
+    marker = extract_bundle(bundle, extracted, allow_native=True)
+    assert marker["backend"] == "native" and marker["task"] == task
+    assert marker["max_sequence_length"] == 1024 and not list(extracted.iterdir())
+    actual, _ = requests(1024, tmp_path / "image.rgb", 16, 16, task, backend=marker["backend"])
+    expected, _ = requests(1024, tmp_path / "image.rgb", 16, 16,
+                           "vision_language_generation" if media else "text_generation",
+                           backend="edge_llm")
+    native_cases = {case["id"]: case for case in actual}
+    edge_cases = {case["id"]: case for case in expected}
+    assert edge_cases["reject_control"]["expect_error"] is True
+    seeded = native_cases["seeded_control"]
+    repeated = native_cases["seeded_control_repeat"]
+    assert seeded["config"] == edge_cases["reject_control"]["config"]
+    assert seeded["config"]["seed"] == 42
+    assert seeded["equal_to"] == "raw" and not seeded.get("expect_error", False)
+    assert repeated["config"] == seeded["config"]
+    assert repeated["equal_to"] == "seeded_control" and not repeated.get("expect_error", False)
+    assert [case for case in actual if not case["id"].startswith("seeded_control")] == [
+        case for case in expected if case["id"] != "reject_control"
+    ]
+    rejection = "reject_image_capacity" if media else "reject_capacity"
+    recovery = "image_after_rejection" if media else "raw_after_capacity"
+    assert native_cases[rejection]["expect_error"] is True
+    assert native_cases[recovery]["equal_to"] == ("image" if media else "raw")
+
+
+def test_native_harness_rejects_inconsistent_visual_capacity(tmp_path):
+    from tensorrt_model_connect.bundle_writer import BundleWriter
+    from families.qwen3_5_moe.tests.edge_validation import extract_bundle
+
+    bundle = tmp_path / "native.bundle"
+    writer = BundleWriter(bundle)
+    writer.set_header(family="qwen3_5_moe", task="images_text_to_text", backend="trt")
+    writer.add_bytes("engine.plan", b"decoder")
+    writer.add_json("runtime.json", {"max_cache_length": 1024})
+    writer.add_bytes("native_visual.plan", b"visual")
+    writer.add_json("native_visual.json", {"capacity": 512, "input_limit": 512})
+    writer.finish()
+    with pytest.raises(ValueError, match="capacity differ"):
+        extract_bundle(bundle, tmp_path / "extracted", allow_native=True)
