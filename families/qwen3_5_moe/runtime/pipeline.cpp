@@ -533,8 +533,12 @@ void RecurrentPipeline::run_step(int32_t token_id, std::vector<float>& logits,
     // D2H logits only (~512 KB). Synchronous cudaMemcpy is faster than
     // cudaMemcpyAsync+sync here because it bypasses stream ordering overhead.
     logits.resize(logits_numel_);
-    cudaMemcpy(logits.data(), logits_device_ptr_, logits_numel_ * sizeof(float),
-               cudaMemcpyDeviceToHost);
+    const cudaError_t logits_copy = cudaMemcpy(
+        logits.data(), logits_device_ptr_, logits_numel_ * sizeof(float), cudaMemcpyDeviceToHost);
+    if (logits_copy != cudaSuccess) {
+        throw std::runtime_error(std::string(name_) + ": failed to copy logits to host: " +
+                                 cudaGetErrorString(logits_copy));
+    }
 
     auto t3 = SteadyClock::now();
 
