@@ -19,7 +19,9 @@ def build(request, writer, draft: Path, variant: str) -> None:
     draft_config = DraftConfig.from_dict(
         json.loads((draft / "config.json").read_text(encoding="utf-8")), config.raw, variant
     )
-    policy = checkpoint_policy(model_dir)
+    policy = checkpoint_policy(
+        model_dir, allow_legacy_producer=request.quantization == "nvfp4"
+    )
     if (
         request.backend != "trt"
         or request.task != "text_generation"

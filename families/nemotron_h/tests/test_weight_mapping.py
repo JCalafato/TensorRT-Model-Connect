@@ -279,6 +279,43 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatc
     )
     np.testing.assert_array_equal(loaded["embedding"], values["backbone.embeddings.weight"])
 
+    # Paired admission must use that same explicit-legacy policy and reader.
+    # Stop after loading: this checks metadata/bytes, not engine qualification.
+    from families.nemotron_h import paired
+    from families.nemotron_h.build_request import BuildRequest
+
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    (draft / "config.json").write_text("{}")
+    monkeypatch.setattr(ModelConfig, "from_dir", staticmethod(lambda _: minimal))
+    monkeypatch.setattr(paired.DraftConfig, "from_dict", staticmethod(
+        lambda *_: SimpleNamespace(query_rows=4)))
+    monkeypatch.setattr(paired, "native_tokenizer_assets", lambda *_: {})
+    original_load = model._NemotronHModel.load_weights
+
+    class PairedWeightsLoaded(Exception):
+        pass
+
+    def load_paired_weights(self, source, config, quant_ctx=None, *, prepared_policy=None):
+        assert prepared_policy is not None and prepared_policy.algorithm == algorithm
+        mapped = original_load(self, source, config, quant_ctx, prepared_policy=prepared_policy)
+        np.testing.assert_array_equal(mapped["embedding"], values["backbone.embeddings.weight"])
+        raise PairedWeightsLoaded
+
+    monkeypatch.setattr(model._NemotronHModel, "load_weights", load_paired_weights)
+    for selection in (None, "none", "nvfp4"):
+        paired_request = BuildRequest(tmp_path, tmp_path / "out", "nemotron_h",
+                                      "text_generation", "fp16", quantization=selection)
+        if selection != "nvfp4":
+            with pytest.raises(ValueError, match="ModelOpt metadata"):
+                paired.build(paired_request, None, draft, "dflash")
+        elif algorithm == "FP8":
+            with pytest.raises(ValueError, match="requires an NVFP4 target"):
+                paired.build(paired_request, None, draft, "dflash")
+        else:
+            with pytest.raises(PairedWeightsLoaded):
+                paired.build(paired_request, None, draft, "dflash")
+
 
 def test_prepared_mixed_policy_preserves_activation_precision(tmp_path):
     import json
