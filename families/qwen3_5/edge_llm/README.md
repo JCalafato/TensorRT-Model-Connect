@@ -77,10 +77,12 @@ trtmc run qwen35.bundle \
   --use-chat-template true --enable-thinking false
 ```
 
-Image bundles use `--task vision_language_generation`. The native request
+Image bundles use `--task vision_language_generation`. The Model Connect request
 accepts `--image /path/to/image` or an ordered JSON `--images` list, not both.
-A vision tower and source processor metadata are required. The family preserves
-the provider chat template and delegates image preprocessing to Edge.
+A vision tower and source processor metadata are required. Edge-backed execution
+preserves the provider chat template and delegates image preprocessing to Edge.
+Native fallback instead uses the family-owned C++ preprocessing and checkpoint
+chat-template handling; it does not invoke an Edge runtime.
 
 ```bash
 trtmc qwen3_5 build /models/Qwen3.5-4B \
@@ -107,8 +109,10 @@ order rather than converting a video into independent image requests.
 Build the same `vision_language_generation` bundle shown above. Use the typed
 C++/C API for video input; the generic `trtmc run --image` option is not a video
 interface, and no shared CLI option is added. Text-only bundles do not expose
-the video tasks. Edge retains responsibility for preprocessing, temporal patches
-and the provider template; existing visual and context capacity limits apply.
+the video tasks. Edge-backed execution delegates preprocessing, temporal patches
+and the provider template to Edge. Native fallback uses the family-owned C++
+preprocessing, temporal patching and template mapping instead. Existing visual
+and context capacity limits apply to both routes.
 
 Local evidence: original Qwen3.5-2B, FP16, TP1, context8192, two identical frames
 from the existing car fixture. Model Connect and direct Edge returned identical
