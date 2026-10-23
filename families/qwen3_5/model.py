@@ -2314,6 +2314,8 @@ def _build_native(request: "BuildRequest", writer: "BundleWriter", *, require_mt
     readers = _open_safetensors(model_dir, prepared=True)
     weights = model.load_weights(str(model_dir), config, quant_ctx, readers=readers,
                                  compact_fp16=request.tensor_parallel_size == 2)
+    if require_mtp and weights.get("_fp8_kv_cache", False):
+        raise ValueError("Native Qwen3.5 MTP does not support FP8 KV cache")
     writer.set_header(family="qwen3_5", task=request.task, backend=request.backend)
     if request.tensor_parallel_size == 2:
         _build_tensor_parallel(request, writer, model_dir, config, model, weights,

@@ -358,7 +358,7 @@ five seeded-sampling requests. The 2B and 4B mixed-media NEDs are 0.020 and 0.03
 their other recorded quality comparisons have NED0.0. The 9B ordered-image NED
 is 0.206 in both modes. The 0.8B raw-text NED is 0.651; ordered-image NED is
 0.307 ordinarily and 0.353 with MTP. Its greedy ordered-image tokens first differ
-from the native target at index100, and sampled video first differs at index2.
+from the native target at index 100, and sampled video first differs at index 2.
 These remaining accuracy and target-parity issues stay runnable and recorded;
 the input fix does not establish an upstream cause for them. These are scoped
 requests, not universal model, context, format or platform qualification.
