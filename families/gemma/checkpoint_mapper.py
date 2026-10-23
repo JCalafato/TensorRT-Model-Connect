@@ -253,6 +253,10 @@ class _NumpyReader:
     def keys(self):
         return self.reader.keys()
 
+    def get_slice(self, name):
+        """Preserve metadata-only shape queries without loading tensor storage."""
+        return self.reader.get_slice(name)
+
     def get_tensor(self, name):
         tensor = self.header[name]
         if tensor["dtype"] != "F8_E4M3":
