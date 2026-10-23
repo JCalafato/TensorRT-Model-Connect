@@ -120,11 +120,13 @@ def _load_projection(
     quant_ctx: NemotronHQuantContext | PreparedQuantContext | None,
     in_features: int,
     out_features: int,
+    *,
+    precision: str = "fp32",
 ) -> np.ndarray:
-    """Load one projection as ``[in, out]``, or a placeholder when it is quantized."""
+    """Load a projection in its graph storage dtype, or retain packed weights."""
     if isinstance(quant_ctx, NemotronHQuantContext) and quant_ctx.should_quantize(name):
         return _shape_only(in_features, out_features)
-    return _transpose_2d(_load_tensor(readers, hf_key), name)
+    return _transpose_2d(_load_tensor(readers, hf_key), name, precision=precision)
 
 
 def _projection(network, x, in_features, out_features, weights, key, *, dtype, quant_ctx):
@@ -146,7 +148,11 @@ class _NemotronHModel:
         quant_ctx: NemotronHQuantContext | PreparedQuantContext | None = None,
         *,
         prepared_policy: PreparedPolicy | None = None,
+        precision: str = "fp32",
     ) -> WeightDict:
+        if precision not in {"fp16", "fp32"}:
+            raise ValueError(f"Unsupported Nemotron-H weight precision {precision!r}")
+        fp32_layers = frozenset(int(layer) for layer in config.raw.get("_fp32_layers", ()))
         model_dir_path = Path(model_dir)
         if isinstance(quant_ctx, NemotronHQuantContext):
             # The dense context owns raw packed projections and their validation.
@@ -202,6 +208,9 @@ class _NemotronHModel:
             lt = layer_types[layer_idx]
             prefix = f"layer.{layer_idx}"
             hf_prefix = f"backbone.layers.{layer_idx}"
+            # Match the existing graph constant dtype instead of retaining an
+            # additional full FP32 projection copy throughout an FP16 build.
+            projection_precision = "fp32" if layer_idx in fp32_layers else precision
 
             # RMSNorm (all layer types)
             norm = _load_tensor(readers, f"{hf_prefix}.norm.weight")
@@ -216,6 +225,7 @@ class _NemotronHModel:
                     quant_ctx,
                     hidden,
                     d_inner + conv_dim + mamba_num_heads,
+                    precision=projection_precision,
                 )
 
                 # conv1d: [conv_dim, 1, d_conv] -> [conv_dim, d_conv]
@@ -235,6 +245,7 @@ class _NemotronHModel:
                     quant_ctx,
                     d_inner,
                     hidden,
+                    precision=projection_precision,
                 )
 
                 # A_log: [mamba_num_heads]
@@ -270,6 +281,7 @@ class _NemotronHModel:
                     quant_ctx,
                     hidden,
                     mlp_intermediate,
+                    precision=projection_precision,
                 )
                 weights[f"{prefix}.w_down"] = _load_projection(
                     readers,
@@ -278,6 +290,7 @@ class _NemotronHModel:
                     quant_ctx,
                     mlp_intermediate,
                     hidden,
+                    precision=projection_precision,
                 )
 
             elif lt == "moe":
@@ -315,6 +328,7 @@ class _NemotronHModel:
                     quant_ctx,
                     hidden,
                     q_dim,
+                    precision=projection_precision,
                 )
                 k_t = _load_projection(
                     readers,
@@ -323,6 +337,7 @@ class _NemotronHModel:
                     quant_ctx,
                     hidden,
                     kv_dim,
+                    precision=projection_precision,
                 )
                 v_t = _load_projection(
                     readers,
@@ -331,6 +346,7 @@ class _NemotronHModel:
                     quant_ctx,
                     hidden,
                     kv_dim,
+                    precision=projection_precision,
                 )
                 o_t = _load_projection(
                     readers,
@@ -339,6 +355,7 @@ class _NemotronHModel:
                     quant_ctx,
                     q_dim,
                     hidden,
+                    precision=projection_precision,
                 )
 
                 # Compact GQA/MQA K/V
@@ -1322,7 +1339,7 @@ def build(request: "BuildRequest", writer: "BundleWriter") -> None:
         model = _NemotronHModel()
         config.raw["_model_dir"] = str(model_dir)
         weights = model.load_weights(
-            str(model_dir), config, quant_ctx, prepared_policy=policy
+            str(model_dir), config, quant_ctx, prepared_policy=policy, precision=precision
         )
         writer.set_header(family="nemotron_h", task=request.task, backend=request.backend)
         if parallel.enabled:

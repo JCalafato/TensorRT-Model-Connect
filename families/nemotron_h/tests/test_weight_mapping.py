@@ -141,6 +141,27 @@ def test_load_weights_mixed_layer_routing_and_fallbacks(
     assert weights["_conv_dim"] == 10
     assert weights["_d_conv"] == 2
 
+    # Only ordinary projection storage narrows, exactly as the FP16 graph
+    # already does. Norm/recurrent values and explicit FP32 layers stay FP32.
+    projections = {
+        "layer.0.mamba_in_proj", "layer.0.mamba_out_proj",
+        "layer.1.w_up", "layer.1.w_down",
+        "layer.2.w_q", "layer.2.w_k", "layer.2.w_v", "layer.2.w_o",
+    }
+    for fp32_layers in ((), (1,)):
+        cfg.raw["_fp32_layers"] = fp32_layers
+        compact = model._NemotronHModel().load_weights("/unused", cfg, precision="fp16")
+        for key, value in weights.items():
+            if not isinstance(value, np.ndarray):
+                assert compact[key] == value
+                continue
+            narrowed = key in projections and int(key.split(".")[1]) not in fp32_layers
+            dtype = np.float16 if narrowed else value.dtype
+            assert compact[key].dtype == dtype
+            np.testing.assert_array_equal(compact[key], value.astype(dtype))
+            if narrowed:
+                assert compact[key].nbytes * 2 == value.nbytes
+
 
 def test_load_weights_raises_for_pattern_length_mismatch(
     monkeypatch: pytest.MonkeyPatch,
@@ -222,6 +243,10 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, monkeypatc
     assert weight.input_scale is None if algorithm == "W4A16_NVFP4" else weight.input_scale[0] == .125
     transposed = _transpose_2d(weight, "p")
     assert transposed.transposed and transposed.packed is weight.packed
+    compact = model._load_projection(readers, "p.weight", "p", None, 32, 32, precision="fp16")
+    assert isinstance(compact, PreparedLinear) and compact.transposed
+    assert compact.format == weight.format
+    np.testing.assert_array_equal(compact.packed, weight.packed)
     with pytest.raises(ValueError, match="already transposed"):
         transposed.transpose()
 
