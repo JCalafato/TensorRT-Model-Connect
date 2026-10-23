@@ -195,6 +195,16 @@ std::vector<int32_t> RecurrentPipeline::generate_from_ids(const std::vector<int3
     if (mtp_scheduler_)
         return generate_from_ids_speculative(input_ids, max_new_tokens, params, *active_sampler);
 
+    const int32_t capacity = state_->max_length();
+    // The final sampled token is returned without another decoder/cache write.
+    // Recurrent-only state advertises -1 because it has no bounded KV cache.
+    if (max_new_tokens < 0 ||
+        (capacity != -1 &&
+         (capacity <= 0 || input_ids.size() > static_cast<std::size_t>(capacity) ||
+          static_cast<std::size_t>(max_new_tokens - 1) >
+              static_cast<std::size_t>(capacity) - input_ids.size())))
+        throw std::invalid_argument("Qwen3.5-MoE prompt and output exceed decoder capacity");
+
     state_->reset();
     state_->bind_to(*decoder_);
 

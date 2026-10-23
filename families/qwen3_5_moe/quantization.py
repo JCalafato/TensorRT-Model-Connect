@@ -213,17 +213,22 @@ def load_fp8_kv_scales(readers, layer_types: list[str]) -> dict:
         return {"_fp8_kv_cache": False}
     result = {"_fp8_kv_cache": True}
     for name, prefix in prefixes.items():
-        scales = []
-        for projection in ("k", "v"):
-            key = f"{prefix}.{projection}_proj.{projection}_scale"
-            reader = readers.tensor_map.get(key)
-            # Edge initializes individual absent scales to one once enabled.
-            value = np.asarray(reader.get_tensor(key)) if reader is not None else np.array(1.0)
-            if value.size != 1 or not np.isfinite(value).all() or (value <= 0).any():
-                raise ValueError(f"Invalid Qwen3.5-MoE FP8 cache scale: {key}")
-            scales.append(float(value.item()))
-        result[f"{name}.kv_scales"] = tuple(scales)
+        result[f"{name}.kv_scales"] = load_attention_kv_scales(readers, prefix)
     return result
+
+
+def load_attention_kv_scales(readers, prefix: str) -> tuple[float, float]:
+    """Read one attention layer's calibrated scales, including excluded MTP heads."""
+    scales = []
+    for projection in ("k", "v"):
+        key = f"{prefix}.{projection}_proj.{projection}_scale"
+        reader = readers.tensor_map.get(key)
+        # Edge initializes individual absent scales to one once FP8 KV is enabled.
+        value = np.asarray(reader.get_tensor(key)) if reader is not None else np.array(1.0)
+        if value.size != 1 or not np.isfinite(value).all() or (value <= 0).any():
+            raise ValueError(f"Invalid Qwen3.5-MoE FP8 cache scale: {key}")
+        scales.append(float(value.item()))
+    return scales[0], scales[1]
 
 
 def prepare_fp8_cache(network, current, cache, scale_value: float):

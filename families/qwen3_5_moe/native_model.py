@@ -30,7 +30,7 @@ from .checkpoint_mapper import (
 from . import graph_ops
 from . import graph_blocks
 from .quantization import (
-    PackedLinear, load_fp8_kv_scales, load_projection, prepared_format, prepare_fp8_cache,
+    PackedLinear, load_attention_kv_scales, load_fp8_kv_scales, load_projection, prepared_format, prepare_fp8_cache,
 )
 
 
@@ -766,6 +766,8 @@ class _Qwen35MoeModel:
         if text.get("mtp_num_hidden_layers") != 1 or not _has_tensor(readers, "mtp.fc.weight"):
             raise ValueError("Qwen3.5-MoE MTP requires one embedded trained draft layer")
         prefix = "mtp_layer"
+        if weights.get("_fp8_kv_cache", False):
+            weights[f"{prefix}.kv_scales"] = load_attention_kv_scales(readers, "mtp.layers.0.self_attn")
         weights[f"{prefix}.fc"] = load_projection(readers, "mtp.fc")
         for name in ("pre_fc_norm_embedding", "pre_fc_norm_hidden"):
             weights[f"{prefix}.{name}"] = 1.0 + _load_tensor(readers, f"mtp.{name}.weight").astype(np.float32)

@@ -53,7 +53,7 @@ def validate_request(request) -> None:
     if request.max_sequence_length is not None and (
         type(request.max_sequence_length) is not int or request.max_sequence_length <= 1
     ):
-        raise ValueError("Context capacity must be an integer greater than1")
+        raise ValueError("Context capacity must be an integer greater than 1")
 
 
 def validate_execution(request, raw: dict) -> Path | None:
@@ -133,6 +133,7 @@ def build(request, writer, native_build) -> None:
     )
     os.close(descriptor)
     log = Path(name)
+    edge_error = None
     with tempfile.TemporaryDirectory(
         prefix=f".{request.output_path.name}.edge-stage-", dir=request.output_path.parent
     ) as directory:
@@ -147,7 +148,13 @@ def build(request, writer, native_build) -> None:
                 log,
                 exc_info=True,
             )
-            native_build(request, writer)
+            edge_error = error
+        else:
+            edge_llm.publish(request, writer, files, marker)
+            log.unlink(missing_ok=True)
             return
-        edge_llm.publish(request, writer, files, marker)
-        log.unlink(missing_ok=True)
+    # Release staged checkpoint copies before native graph construction starts.
+    try:
+        native_build(request, writer)
+    except Exception as native_error:
+        raise native_error from edge_error
