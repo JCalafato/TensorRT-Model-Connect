@@ -319,8 +319,14 @@ def test_dense_nvfp4_source_keeps_activation_scales_and_rejects_unmapped_cache(t
         validate_source(tmp_path, raw, readers)
 
 
-@pytest.mark.parametrize("invalid", ["weight_dtype", "block_shape", "block_dtype", "global_zero", "input_zero"])
-def test_dense_nvfp4_rejects_invalid_packing_and_scales_before_graph_build(invalid):
+@pytest.mark.parametrize("invalid,message", [
+    ("weight_dtype", "packed rank-two uint8"),
+    ("block_shape", "block-scale geometry"),
+    ("block_dtype", "block-scale geometry"),
+    ("global_zero", "global scales"),
+    ("input_zero", "global scales"),
+])
+def test_dense_nvfp4_rejects_invalid_packing_and_scales_before_graph_build(invalid, message):
     from types import SimpleNamespace
     import ml_dtypes
     import numpy as np
@@ -342,7 +348,7 @@ def test_dense_nvfp4_rejects_invalid_packing_and_scales_before_graph_build(inval
     reader = SimpleNamespace(get_tensor=lambda name: values[name])
     graph = SimpleNamespace(prefix="model.language_model", readers=SimpleNamespace(
         tensor_map={key: reader for key in values}))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         dense_linear(graph, _Tensor(trt.float16, (1, 32)), "layers.0.mlp.up_proj")
 
 
