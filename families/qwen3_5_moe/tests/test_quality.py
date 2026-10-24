@@ -137,6 +137,32 @@ def test_native_harness_rejects_inconsistent_visual_capacity(tmp_path, task):
         extract_bundle(bundle, tmp_path / "extracted", allow_native=True)
 
 
+@pytest.mark.parametrize("name,available,expected", [
+    ("cuda", True, "cuda:0"),
+    ("cuda", False, None),
+    ("cpu", True, "cpu"),
+    ("cpu", False, "cpu"),
+])
+def test_packed_reference_preserves_explicit_device(name, available, expected, monkeypatch):
+    """The selected GPU oracle must not silently switch to a different reference device."""
+    import torch
+    from families.qwen3_5_moe.tests.hf_reference import _reference_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
+    if expected is None:
+        with pytest.raises(RuntimeError, match="requires an available CUDA device"):
+            _reference_device(name)
+    else:
+        assert str(_reference_device(name)) == expected
+
+
+def test_packed_reference_rejects_unknown_device():
+    from families.qwen3_5_moe.tests.hf_reference import _reference_device
+
+    with pytest.raises(ValueError, match="reference device"):
+        _reference_device("automatic")
+
+
 @pytest.mark.parametrize("dtype,expected", [("bfloat16", "bf16"), ("float16", "fp16")])
 def test_packed_reference_honors_checkpoint_precision(tmp_path, dtype, expected):
     """The official BF16 fixture must not be silently narrowed to FP16."""

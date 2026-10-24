@@ -185,6 +185,18 @@ Source verification applies the v1-to-v2 offset only for actual v1 sources.
 This preserves the original source-verification and independent quality gates;
 format controls alone do not establish full-model accuracy.
 
+The selected GPU E2E runs the same independent GPTQModel Torch reference on the
+leased CUDA device, after the Model Connect subprocess has exited. It does not
+hide the GPU or choose placement based on the comparison result. The CPU
+reference produced a substantially different image description in a recorded
+comparison, while a source-verified CUDA control matched both frozen 32-token
+outputs exactly in the same request order. This isolates a reference-environment
+discrepancy, not its underlying CPU kernel or version cause. Explicit
+`--device cpu` remains available for diagnosis. Both placements retain checkpoint
+precision, source-tensor verification, offline inputs and the same 0.15 gate;
+CUDA unavailability is an error, not a skip or an implicit CPU fallback.
+A passing retained-output control is not a fresh Model Connect E2E result.
+
 The owning CTest factory target also builds the standalone E2E drivers. These
 helpers remain in the configured native build tree, not in an installed runtime.
 Selected E2E tests use `TRTMC_NATIVE_BUILD_DIR` for helpers while retaining

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Explicit official packed-source CPU oracle; no custom dequantization or relaxed metric."""
+"""Explicit official packed-source oracle; no custom dequantization or relaxed metric."""
 
 from __future__ import annotations
 import argparse
@@ -19,6 +19,17 @@ from families.qwen3_5_moe.tests.quality import (
 
 MODEL_ID = "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
 REVISION = "3af5ca2972faf6de1fd6f4efc4d8d319ca751e8b"
+
+
+def _reference_device(name: str):
+    """Honor explicit oracle placement without hiding CUDA or choosing by quality."""
+    import torch
+
+    if name not in {"cuda", "cpu"}:
+        raise ValueError(f"Unsupported reference device: {name!r}")
+    if name == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("The selected reference requires an available CUDA device")
+    return torch.device("cuda:0" if name == "cuda" else "cpu")
 
 
 def _reference_precision(checkpoint: Path) -> str:
@@ -69,13 +80,14 @@ def _reference_format(checkpoint: Path, index: dict[str, str]) -> str:
     return source_format
 
 
-def run(checkpoint: Path, output: Path, image_path: Path) -> None:
-    """Load the official CPU route, verify every source tensor, then compare frozen requests.
+def run(checkpoint: Path, output: Path, image_path: Path, *, device: str = "cuda") -> None:
+    """Load the official route, verify every source tensor, then compare frozen requests.
 
     Args:
         checkpoint: Complete immutable original GPTQ source checkpoint.
         output: Directory containing the fresh public/direct proof outputs.
         image_path: Exact RGB image used by the public proof.
+        device: CUDA for the GPU E2E; CPU only when explicitly requested for diagnostics.
 
     Raises:
         Exception: Missing dependencies, source mismatch, loader error or strict quality failure.
@@ -90,7 +102,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     from gptqmodel.nn_modules.qlinear import BaseQuantLinear
 
     assert os.environ.get("HF_HUB_OFFLINE") == "1" and os.environ.get("TRANSFORMERS_OFFLINE") == "1"
-    assert os.environ.get("CUDA_VISIBLE_DEVICES") == "" and not torch.cuda.is_available()
+    reference_device = _reference_device(device)
     assert importlib.metadata.version("gptqmodel") == "7.4.0"
     assert importlib.metadata.version("transformers") == "5.14.1"
     started = time.time()
@@ -102,7 +114,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     reference_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}[precision]
     model = GPTQModel.load(
         str(checkpoint),
-        device="cpu",
+        device=str(reference_device),
         backend=BACKEND.TORCH,
         dtype=reference_dtype,
         format=source_format,
@@ -149,7 +161,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             for name in set(index.values())
         }
         for name, tensor in state.items():
-            assert not tensor.is_meta and tensor.device.type == "cpu", name
+            assert not tensor.is_meta and tensor.device == reference_device, name
             source = shards[index[name]].get_tensor(name)
             field = name.rsplit(".", 1)[-1]
             if field == "qzeros" and source_format == "gptq" and runtime_format == "gptq_v2":
@@ -158,7 +170,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
                     and quantized[name.rsplit(".", 1)[0]].REQUIRES_FORMAT_V2
                 )
                 source = source + 0x11111111
-            assert torch.equal(tensor, source.to(dtype=tensor.dtype)), name
+            assert torch.equal(tensor.cpu(), source.to(dtype=tensor.dtype)), name
             counts[field if field in counts else "original"] += 1
     assert all(
         counts[field] == 40 * 256 * 3 for field in ("qweight", "qzeros", "g_idx", "scales")
@@ -202,7 +214,8 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             )
             inputs = processor(text=[prompt], images=[image], return_tensors="pt")
         inputs = {
-            k: (v.to(dtype=reference_dtype) if v.is_floating_point() else v)
+            k: v.to(device=reference_device,
+                    dtype=reference_dtype if v.is_floating_point() else v.dtype)
             for k, v in inputs.items()
         }
         input_ids = inputs["input_ids"][0].tolist()
@@ -240,7 +253,8 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             "source_format": source_format,
             "runtime_format": runtime_format,
             "precision": precision,
-            "backend": "official GPTQModel7.4.0 Qwen3_5_MoeQModel / Torch CPU",
+            "backend": "official GPTQModel7.4.0 Qwen3_5_MoeQModel / Torch",
+            "device": str(reference_device),
             "threshold": 0.15,
             "results": results,
             "passed": len(results) == 2 and all(row["passed"] for row in results),
@@ -269,12 +283,14 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
 
 
 def main() -> None:
-    """Run only when explicitly provisioned with the reviewed offline CPU reference environment."""
+    """Run only with the reviewed offline reference environment and explicit placement."""
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("checkpoint", "output", "image"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda",
+                        help="Use the leased GPU; CPU is an explicit diagnostic mode")
     args = parser.parse_args()
-    run(args.checkpoint, args.output, args.image)
+    run(args.checkpoint, args.output, args.image, device=args.device)
 
 
 if __name__ == "__main__":

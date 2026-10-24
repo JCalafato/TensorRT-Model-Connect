@@ -89,7 +89,6 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
     )
     environment = {
         **os.environ,
-        "CUDA_VISIBLE_DEVICES": "",
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
     }
@@ -98,6 +97,8 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
             str(reference_python),
             "-m",
             "families.qwen3_5_moe.tests.hf_reference",
+            "--device",
+            "cuda",
             "--checkpoint",
             str(checkpoint),
             "--output",
