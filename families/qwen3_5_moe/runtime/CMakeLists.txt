@@ -54,10 +54,13 @@ endif()
 if(TRTMC_BUILD_TESTS)
   add_executable(qwen3_5_moe_edge_inference ${PROJECT_SOURCE_DIR}/families/qwen3_5_moe/tests/cpp/test_qwen3_5_moe_edge_inference.cpp)
   target_link_libraries(qwen3_5_moe_edge_inference PRIVATE trtmc_runtime trtmc_core nlohmann_json::nlohmann_json)
+  # The selected E2E uses this helper with an isolated installed runtime.
+  add_dependencies(test_qwen3_5_moe_edge_factory qwen3_5_moe_edge_inference)
 endif()
 if(TRTMC_BUILD_TESTS AND TARGET EdgeLLM::Core)
   add_executable(qwen3_5_moe_edge_reference ${PROJECT_SOURCE_DIR}/families/qwen3_5_moe/tests/cpp/test_qwen3_5_moe_edge_reference.cpp edge_llm/device_link.cu)
   target_link_libraries(qwen3_5_moe_edge_reference PRIVATE EdgeLLM::Core)
+  add_dependencies(test_qwen3_5_moe_edge_factory qwen3_5_moe_edge_reference)
   set_target_properties(qwen3_5_moe_edge_reference PROPERTIES
     CUDA_ARCHITECTURES "${EdgeLLM_CUDA_ARCHITECTURE}" CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 endif()

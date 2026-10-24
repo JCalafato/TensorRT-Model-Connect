@@ -261,7 +261,8 @@ def gpu(args) -> None:
     )
     write_json(output / "public.requests.json", public)
     write_json(output / "direct.requests.json", direct)
-    binary = args.runtime_root / "families/qwen3_5_moe"
+    helper_root = getattr(args, "native_build_dir", None) or args.runtime_root
+    binary = helper_root / "families/qwen3_5_moe"
     failures = []
     commands = [
         (
@@ -294,7 +295,7 @@ def gpu(args) -> None:
                 "--task",
                 marker["task"],
                 "--plugin-path",
-                str(args.runtime_root / "libNvInfer_edgellm_plugin.so"),
+                str(helper_root / "libNvInfer_edgellm_plugin.so"),
             ],
             output / "direct.log",
         ),
@@ -351,6 +352,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("bundle", "runtime-root", "output", "image"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--native-build-dir", type=Path,
+                        help="Configured native helper build tree, if separate from runtime-root")
     parser.add_argument("--checkpoint-id", required=True)
     parser.add_argument("--checkpoint-revision", required=True)
     gpu(parser.parse_args())

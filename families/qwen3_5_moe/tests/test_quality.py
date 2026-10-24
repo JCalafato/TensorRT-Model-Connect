@@ -47,7 +47,10 @@ def test_independent_quality_requires_both_gates(gpu_passed, reference_passed):
 @pytest.mark.parametrize("task", [
     "text_generation", "vision_language_generation", "images_text_to_text",
 ])
-def test_native_harness_reads_metadata_without_copying_engines(tmp_path, task):
+@pytest.mark.parametrize("separate_build", [False, True])
+def test_native_harness_reads_metadata_without_copying_engines(
+    tmp_path, task, separate_build, monkeypatch,
+):
     """Native E2E uses its actual binding and the same existing raw/image/recovery cases."""
     from tensorrt_model_connect.bundle_writer import BundleWriter
     from families.qwen3_5_moe.tests.edge_validation import extract_bundle, requests
@@ -89,6 +92,32 @@ def test_native_harness_reads_metadata_without_copying_engines(tmp_path, task):
     recovery = "image_after_rejection" if media else "raw_after_capacity"
     assert native_cases[rejection]["expect_error"] is True
     assert native_cases[recovery]["equal_to"] == ("image" if media else "raw")
+
+    # Check path wiring only; do not mock successful inference or quality evidence.
+    from types import SimpleNamespace
+    from PIL import Image
+    from families.qwen3_5_moe.tests import edge_validation
+
+    runtime = tmp_path / "installed-runtime"
+    build = tmp_path / "native-build" if separate_build else None
+    image = tmp_path / "image.png"
+    Image.new("RGB", (16, 16)).save(image)
+
+    def check_driver(command, log):
+        assert Path(command[0]) == (
+            (build or runtime) / "families/qwen3_5_moe/qwen3_5_moe_edge_inference"
+        )
+        assert command[command.index("--runtime-root") + 1] == str(runtime)
+        assert command[command.index("--expected-backend") + 1] == "native"
+        raise RuntimeError("driver path verified")
+
+    monkeypatch.setattr(edge_validation, "run_driver", check_driver)
+    with pytest.raises(RuntimeError, match="driver path verified"):
+        edge_validation.gpu(SimpleNamespace(
+            bundle=bundle, runtime_root=runtime, native_build_dir=build,
+            output=tmp_path / "proof", image=image,
+            checkpoint_id="fixture", checkpoint_revision="fixture",
+        ))
 
 
 @pytest.mark.parametrize("task", ["vision_language_generation", "images_text_to_text"])

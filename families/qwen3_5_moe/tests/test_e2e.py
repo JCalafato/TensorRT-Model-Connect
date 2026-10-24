@@ -50,6 +50,9 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
     assert runtime.is_dir() and reference_python.is_file()
     assert (runtime / "libtrtmc_model_qwen3_5_moe.so").is_file()
     assert (runtime / "libtrtmc_backend_trt.so").is_file()
+    native_build = Path(os.environ.get("TRTMC_NATIVE_BUILD_DIR") or runtime)
+    helper = native_build / "families/qwen3_5_moe/qwen3_5_moe_edge_inference"
+    assert helper.is_file() and os.access(helper, os.X_OK), helper
     from huggingface_hub import constants, snapshot_download
 
     source = Path(snapshot_download(
@@ -78,6 +81,7 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
         SimpleNamespace(
             bundle=bundle,
             runtime_root=runtime,
+            native_build_dir=native_build,
             output=output,
             image=image,
             checkpoint_id=MANIFEST["hf_id"],

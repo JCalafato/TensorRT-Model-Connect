@@ -176,6 +176,13 @@ unchanged. Correcting this setup mismatch alone does not establish the cause of
 the earlier failure or qualify image accuracy; that still requires a completed
 independent comparison, not only agreement between Edge and native execution.
 
+The owning CTest factory target also builds the standalone E2E drivers. These
+helpers remain in the configured native build tree, not in an installed runtime.
+Selected E2E tests use `TRTMC_NATIVE_BUILD_DIR` for helpers while retaining
+`TRTMC_RUNTIME_ROOT` for loading the isolated runtime. Standalone
+`families.qwen3_5_moe.tests.edge_validation` accepts `--native-build-dir` for the
+same split layout; omitting it retains the colocated build/runtime layout.
+
 Owning tests retain exact public/direct token comparisons when Edge is selected.
 Native bundles instead exercise the owning public runtime and actual media task
 bindings; they do not claim direct Edge parity. Both paths retain control
