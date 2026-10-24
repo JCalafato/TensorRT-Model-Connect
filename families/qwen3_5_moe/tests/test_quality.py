@@ -158,3 +158,31 @@ def test_packed_reference_rejects_undeclared_or_unsupported_precision(tmp_path, 
     (tmp_path / "config.json").write_text(json.dumps({"text_config": {"dtype": dtype}}))
     with pytest.raises(ValueError, match="checkpoint dtype"):
         _reference_precision(tmp_path)
+
+
+@pytest.mark.parametrize("times_out", [False, True])
+def test_failed_validation_preserves_diagnostics(tmp_path, capsys, times_out):
+    """A failing child remains failed while its bounded diagnostic reaches CI evidence."""
+    import os
+    import subprocess
+    import sys
+    from families.qwen3_5_moe.tests.edge_validation import run_driver
+
+    log = tmp_path / "reference.log"
+    command = [sys.executable, "-c", (
+        "import os, sys, time; "
+        "print('x' * 70000); "
+        "print(os.environ['TRTMC_DIAGNOSTIC_FIXTURE'], flush=True); "
+        + ("time.sleep(10)" if times_out else "sys.exit(7)")
+    )]
+    error = subprocess.TimeoutExpired if times_out else subprocess.CalledProcessError
+    with pytest.raises(error) as failure:
+        run_driver(command, log, env={**os.environ, "TRTMC_DIAGNOSTIC_FIXTURE": "reference failure"},
+                   timeout=1 if times_out else 30)
+    assert failure.value.cmd == command
+    assert json.loads(log.with_suffix(".command.json").read_text()) == command
+    if not times_out:
+        assert failure.value.returncode == 7
+    captured = capsys.readouterr().out
+    assert "reference failure" in captured and len(captured) <= 65536 + 256
+    assert log.stat().st_size > 65536 and log.read_text().endswith("reference failure\n")

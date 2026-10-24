@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 from types import SimpleNamespace
 import pytest
@@ -94,24 +93,21 @@ def test_official_checkpoint_e2e(case_name: str, tmp_path: Path, request) -> Non
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
     }
-    with (output / "hf.log").open("w") as log:
-        subprocess.run(
-            [
-                str(reference_python),
-                "-m",
-                "families.qwen3_5_moe.tests.hf_reference",
-                "--checkpoint",
-                str(checkpoint),
-                "--output",
-                str(output),
-                "--image",
-                str(image),
-            ],
-            env=environment,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=True,
-            timeout=3600,
-        )
+    edge_validation.run_driver(
+        [
+            str(reference_python),
+            "-m",
+            "families.qwen3_5_moe.tests.hf_reference",
+            "--checkpoint",
+            str(checkpoint),
+            "--output",
+            str(output),
+            "--image",
+            str(image),
+        ],
+        output / "hf.log",
+        env=environment,
+        timeout=3600,
+    )
     evidence = json.loads((output / "evidence.json").read_text())
     assert evidence["passed"] and evidence["hf_quality"] == "passed"

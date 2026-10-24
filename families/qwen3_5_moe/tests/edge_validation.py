@@ -127,11 +127,22 @@ def extract_bundle(bundle: Path, destination: Path, *, allow_native: bool = Fals
     return {**marker, "backend": "edge_llm"}
 
 
-def run_driver(command: list[str], log: Path) -> None:
-    """Run one finite driver, retaining the command and combined diagnostics on failure."""
+def run_driver(
+    command: list[str], log: Path, *, env: dict[str, str] | None = None, timeout: float = 1800,
+) -> None:
+    """Retain command/log files and expose a bounded failed log without swallowing the error."""
     write_json(log.with_suffix(".command.json"), command)
-    with log.open("w", encoding="utf-8") as output:
-        subprocess.run(command, check=True, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
+    try:
+        with log.open("w", encoding="utf-8") as output:
+            subprocess.run(command, check=True, stdout=output, stderr=subprocess.STDOUT,
+                           env=env, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        if log.is_file():
+            with log.open("rb") as captured:
+                captured.seek(max(0, log.stat().st_size - 65536))
+                print("Failed validation subprocess; final log bytes:\n" +
+                      captured.read().decode("utf-8", errors="replace"), flush=True)
+        raise
 
 
 def requests(
