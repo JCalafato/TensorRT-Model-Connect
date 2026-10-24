@@ -21,6 +21,16 @@ MODEL_ID = "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
 REVISION = "3af5ca2972faf6de1fd6f4efc4d8d319ca751e8b"
 
 
+def _reference_precision(checkpoint: Path) -> str:
+    """Honor the packed checkpoint's declared arithmetic; never guess FP16."""
+    config = json.loads((checkpoint / "config.json").read_text())
+    dtype = config.get("text_config", {}).get("dtype")
+    precisions = {"float16": "fp16", "bfloat16": "bf16"}
+    if not isinstance(dtype, str) or dtype not in precisions:
+        raise ValueError(f"Unsupported packed-reference checkpoint dtype: {dtype!r}")
+    return precisions[dtype]
+
+
 def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     """Load the official CPU route, verify every source tensor, then compare frozen requests.
 
@@ -48,11 +58,13 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     started = time.time()
     torch.set_num_threads(16)
     torch.set_num_interop_threads(1)
+    precision = _reference_precision(checkpoint)
+    reference_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}[precision]
     model = GPTQModel.load(
         str(checkpoint),
         device="cpu",
         backend=BACKEND.TORCH,
-        dtype=torch.float16,
+        dtype=reference_dtype,
         trust_remote_code=False,
         local_files_only=True,
         attn_implementation="eager",
@@ -150,7 +162,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             )
             inputs = processor(text=[prompt], images=[image], return_tensors="pt")
         inputs = {
-            k: (v.to(dtype=torch.float16) if v.is_floating_point() else v)
+            k: (v.to(dtype=reference_dtype) if v.is_floating_point() else v)
             for k, v in inputs.items()
         }
         input_ids = inputs["input_ids"][0].tolist()
@@ -186,7 +198,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             "revision": REVISION,
             "source_verified": counts,
             "runtime_format": runtime_format,
-            "precision": "fp16",
+            "precision": precision,
             "backend": "official GPTQModel7.4.0 Qwen3_5_MoeQModel / Torch CPU",
             "threshold": 0.15,
             "results": results,

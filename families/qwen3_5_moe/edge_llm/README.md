@@ -167,11 +167,14 @@ issue. MTP's recorded ordinary-decoding comparison is an accuracy failure too.
 Accuracy-only failures remain executable;
 they must not be reported as passing quality validation.
 
-The independent packed-GPTQ CPU reference is not yet qualified: its recorded
-raw generation degenerated despite exact checkpoint-tensor verification, and
-image generation timed out. This leaves independent image accuracy unproven;
-it is not evidence that the failure belongs exclusively to Edge. The existing
-reference and 0.15 gate remain unchanged while that reference issue is diagnosed.
+Earlier independent packed-GPTQ CPU reference runs forced FP16 despite the
+checkpoint's declared BF16 arithmetic. Raw generation degenerated despite exact
+checkpoint-tensor verification, and image generation timed out. The reference
+now follows the declared precision, including floating image inputs and precision
+evidence. The official backend, source verification, requests and 0.15 gate are
+unchanged. Correcting this setup mismatch alone does not establish the cause of
+the earlier failure or qualify image accuracy; that still requires a completed
+independent comparison, not only agreement between Edge and native execution.
 
 Owning tests retain exact public/direct token comparisons when Edge is selected.
 Native bundles instead exercise the owning public runtime and actual media task

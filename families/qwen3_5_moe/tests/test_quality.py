@@ -3,6 +3,8 @@
 
 """Strict default quality gate has no short-answer or prefix relaxation."""
 
+import json
+from pathlib import Path
 import pytest
 from families.qwen3_5_moe.tests.quality import assert_quality, normalized_edit_distance
 
@@ -101,3 +103,26 @@ def test_native_harness_rejects_inconsistent_visual_capacity(tmp_path):
     writer.finish()
     with pytest.raises(ValueError, match="capacity differ"):
         extract_bundle(bundle, tmp_path / "extracted", allow_native=True)
+
+
+@pytest.mark.parametrize("dtype,expected", [("bfloat16", "bf16"), ("float16", "fp16")])
+def test_packed_reference_honors_checkpoint_precision(tmp_path, dtype, expected):
+    """The official BF16 fixture must not be silently narrowed to FP16."""
+    from families.qwen3_5_moe.tests.hf_reference import _reference_precision
+
+    fixture = Path(__file__).parent / "data/gptq-config.json"
+    config = json.loads(fixture.read_text())
+    assert config["text_config"]["dtype"] == "bfloat16"
+    config["text_config"]["dtype"] = dtype
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    assert _reference_precision(tmp_path) == expected
+
+
+@pytest.mark.parametrize("dtype", [None, "float32", "int8"])
+def test_packed_reference_rejects_undeclared_or_unsupported_precision(tmp_path, dtype):
+    """The official Torch packed backend supports FP16/BF16, not a guessed dtype."""
+    from families.qwen3_5_moe.tests.hf_reference import _reference_precision
+
+    (tmp_path / "config.json").write_text(json.dumps({"text_config": {"dtype": dtype}}))
+    with pytest.raises(ValueError, match="checkpoint dtype"):
+        _reference_precision(tmp_path)

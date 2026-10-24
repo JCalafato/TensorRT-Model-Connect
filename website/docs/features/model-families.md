@@ -302,8 +302,8 @@ When Edge offload is unavailable or fails, the same family owns native TensorRT
 Python graph construction and Model Connect C++ execution, including prepared
 routed experts and media inputs. Native execution needs neither Edge nor ONNX.
 The existing validation checks seed rejection on Edge and seeded request-local
-repeatability on native, retaining capacity recovery and the independent FP32
-quality gate. Native speculative mappings and incomplete full-model builds are
+repeatability on native, retaining capacity recovery, the independent checkpoint
+reference and the unchanged accuracy gate. Native speculative mappings and incomplete full-model builds are
 not presented as completed qualification; see the owning recipe for limitations.
 
 ## Optional Llama Edge execution
