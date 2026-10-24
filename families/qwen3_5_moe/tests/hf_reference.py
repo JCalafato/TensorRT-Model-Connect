@@ -31,6 +31,44 @@ def _reference_precision(checkpoint: Path) -> str:
     return precisions[dtype]
 
 
+
+def _reference_format(checkpoint: Path, index: dict[str, str]) -> str:
+    """Infer only an unambiguous symmetric source format; never rewrite packed tensors."""
+    import numpy as np
+    from safetensors import safe_open
+
+    quant = json.loads((checkpoint / "config.json").read_text())["quantization_config"]
+    if quant.get("quant_method") != "gptq" or quant.get("bits") != 4 or quant.get("sym") is not True:
+        raise ValueError("Packed reference requires symmetric four-bit GPTQ")
+    keys = [key for key in index if key.endswith(".qzeros") and not key.startswith("mtp.")]
+    if not keys:
+        raise ValueError("Packed reference has no source zero points")
+    formats = set()
+    with contextlib.ExitStack() as stack:
+        shards = {
+            name: stack.enter_context(safe_open(checkpoint / name, framework="np"))
+            for name in {index[key] for key in keys}
+        }
+        for key in keys:
+            zeros = shards[index[key]].get_tensor(key)
+            if zeros.dtype != np.int32 or zeros.ndim != 2 or not zeros.size:
+                raise ValueError(f"Invalid packed source zero points: {key}")
+            words = zeros.view(np.uint32)
+            if np.all(words == np.uint32(0x77777777)):
+                formats.add("gptq")
+            elif np.all(words == np.uint32(0x88888888)):
+                formats.add("gptq_v2")
+            else:
+                raise ValueError(f"Ambiguous symmetric source zero points: {key}")
+    if len(formats) != 1:
+        raise ValueError("Mixed packed source zero-point formats")
+    source_format = formats.pop()
+    for field in ("format", "checkpoint_format"):
+        if quant.get(field) is not None and quant[field] != source_format:
+            raise ValueError("Declared GPTQ format disagrees with source zero points")
+    return source_format
+
+
 def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     """Load the official CPU route, verify every source tensor, then compare frozen requests.
 
@@ -59,12 +97,15 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     torch.set_num_threads(16)
     torch.set_num_interop_threads(1)
     precision = _reference_precision(checkpoint)
+    index = json.loads((checkpoint / "model.safetensors.index.json").read_text())["weight_map"]
+    source_format = _reference_format(checkpoint, index)
     reference_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}[precision]
     model = GPTQModel.load(
         str(checkpoint),
         device="cpu",
         backend=BACKEND.TORCH,
         dtype=reference_dtype,
+        format=source_format,
         trust_remote_code=False,
         local_files_only=True,
         attn_implementation="eager",
@@ -83,7 +124,6 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
     assert runtime_format in ("gptq", "gptq_v2"), runtime_format
     requires_v2 = any(module.REQUIRES_FORMAT_V2 for module in quantized.values())
     assert (runtime_format == "gptq_v2") == requires_v2
-    index = json.loads((checkpoint / "model.safetensors.index.json").read_text())["weight_map"]
     state = model.model.state_dict()
     expected = {name for name in index if not name.startswith("mtp.")}
     missing = sorted(expected - set(state))
@@ -112,7 +152,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             assert not tensor.is_meta and tensor.device.type == "cpu", name
             source = shards[index[name]].get_tensor(name)
             field = name.rsplit(".", 1)[-1]
-            if field == "qzeros" and runtime_format == "gptq_v2":
+            if field == "qzeros" and source_format == "gptq" and runtime_format == "gptq_v2":
                 assert (
                     tensor.dtype == torch.int32
                     and quantized[name.rsplit(".", 1)[0]].REQUIRES_FORMAT_V2
@@ -197,6 +237,7 @@ def run(checkpoint: Path, output: Path, image_path: Path) -> None:
             "checkpoint": MODEL_ID,
             "revision": REVISION,
             "source_verified": counts,
+            "source_format": source_format,
             "runtime_format": runtime_format,
             "precision": precision,
             "backend": "official GPTQModel7.4.0 Qwen3_5_MoeQModel / Torch CPU",

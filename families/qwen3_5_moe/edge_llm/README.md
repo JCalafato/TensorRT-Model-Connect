@@ -176,6 +176,15 @@ unchanged. Correcting this setup mismatch alone does not establish the cause of
 the earlier failure or qualify image accuracy; that still requires a completed
 independent comparison, not only agreement between Edge and native execution.
 
+The pinned symmetric GPTQ checkpoint omits its format field but stores literal
+zero points of eight (GPTQ v2). The default official loader assumed v1 and added
+an unintended offset. The reference now checks every packed zero-point tensor,
+rejects mixed formats or conflicting declarations, and supplies the inferred
+format through the official loader API without modifying checkpoint files.
+Source verification applies the v1-to-v2 offset only for actual v1 sources.
+This preserves the original source-verification and independent quality gates;
+format controls alone do not establish full-model accuracy.
+
 The owning CTest factory target also builds the standalone E2E drivers. These
 helpers remain in the configured native build tree, not in an installed runtime.
 Selected E2E tests use `TRTMC_NATIVE_BUILD_DIR` for helpers while retaining

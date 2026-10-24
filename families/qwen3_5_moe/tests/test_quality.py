@@ -186,3 +186,38 @@ def test_failed_validation_preserves_diagnostics(tmp_path, capsys, times_out):
     captured = capsys.readouterr().out
     assert "reference failure" in captured and len(captured) <= 65536 + 256
     assert log.stat().st_size > 65536 and log.read_text().endswith("reference failure\n")
+
+
+@pytest.mark.parametrize("zeros,declared,expected", [
+    ([7, 7], None, "gptq"),
+    ([8, 8], None, "gptq_v2"),
+    ([8, 8], "gptq_v2", "gptq_v2"),
+    ([7, 8], None, None),
+    ([9, 9], None, None),
+    ([], None, None),
+    ([8, 8], "gptq", None),
+])
+def test_packed_reference_requires_consistent_source_format(tmp_path, zeros, declared, expected):
+    """Literal zero8 must not receive the v1 zero-minus-one conversion."""
+    import numpy as np
+    from safetensors.numpy import save_file
+    from families.qwen3_5_moe.tests.hf_reference import _reference_format
+
+    quant = {"quant_method": "gptq", "bits": 4, "sym": True}
+    if declared is not None:
+        quant["checkpoint_format"] = declared
+    config = json.dumps({"quantization_config": quant})
+    (tmp_path / "config.json").write_text(config)
+    tensors = {
+        f"expert.{i}.qzeros": np.full((1, 1), zero * 0x11111111, np.uint32).view(np.int32)
+        for i, zero in enumerate(zeros)
+    }
+    if tensors:
+        save_file(tensors, tmp_path / "weights.safetensors")
+    index = dict.fromkeys(tensors, "weights.safetensors")
+    if expected is None:
+        with pytest.raises(ValueError):
+            _reference_format(tmp_path, index)
+    else:
+        assert _reference_format(tmp_path, index) == expected
+    assert (tmp_path / "config.json").read_text() == config
