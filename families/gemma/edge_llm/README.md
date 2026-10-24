@@ -129,6 +129,16 @@ that gate or resolve the divergence. These are executable requests, so the
 adapter does not disable them for a quality failure. This evidence does not
 qualify the 31B packed target, speculative companions, or other platforms.
 
+## Native quantized attention precision
+
+Earlier-generation Gemma native FP8 projections retain their calibrated Q/DQ
+and compact weights. Attention score scaling, additive masking and softmax use
+explicit FP32 TensorRT graph operations; probabilities return to the original
+compute dtype before multiplication by V. This reuses the softcapped attention
+math without applying a cap when the checkpoint does not specify one. Cache
+and output dtypes are unchanged. Selection depends on quantization, not GPU
+or TensorRT version; TensorRT still owns fusion and kernel selection.
+
 ## Original large-target native coverage
 
 The original `google/gemma-4-31B-it` checkpoint at revision

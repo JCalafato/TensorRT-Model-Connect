@@ -20,6 +20,8 @@ When Edge is unavailable or its builder fails, the family-owned native fallback
 constructs TensorRT graphs directly in Python and executes them through the
 Gemma C++ runtime, without ONNX. It preserves the requested checkpoint format
 and companion rather than silently substituting ordinary decoding.
+Native FP8 attention keeps calibrated projection storage and uses explicit
+FP32 score, mask and softmax math, without a GPU-specific dispatch rule.
 
 Recorded native cases include E2B/E4B/12B and the original or published prepared
 26B/31B variants. Sampled 12B DSpark, EAGLE3 and both DFlash draft architectures

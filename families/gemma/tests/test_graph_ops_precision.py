@@ -344,3 +344,33 @@ def test_dense_nvfp4_rejects_invalid_packing_and_scales_before_graph_build(inval
         tensor_map={key: reader for key in values}))
     with pytest.raises(ValueError):
         dense_linear(graph, _Tensor(trt.float16, (1, 32)), "layers.0.mlp.up_proj")
+
+
+@pytest.mark.parametrize("fp32_scores,softcap", [(True, None), (False, 4.0)])
+def test_explicit_attention_preserves_mask_scale_and_geometry(monkeypatch, fp32_scores, softcap):
+    tensors = [_Tensor(trt.bfloat16, (3, 32)), _Tensor(trt.bfloat16, (7, 8)),
+               _Tensor(trt.bfloat16, (7, 8))]
+    mask = _Tensor(trt.bfloat16, (1, 1, 3, 7))
+    seen = {}
+    monkeypatch.setattr(graph_ops, "reshape_rows_to_heads_4d", lambda net, x, *args, **kw: x)
+    monkeypatch.setattr(graph_ops, "reshape_heads_4d_to_rows", lambda net, x, *args, **kw: x)
+
+    def explicit(network, q, k, v, **kwargs):
+        assert [q, k, v] == tensors
+        seen.update(kwargs)
+        return q
+
+    monkeypatch.setattr(graph_ops, "_add_attention_core_with_fp32_scores", explicit)
+    monkeypatch.setattr(graph_ops, "add_attention_core", lambda *args, **kwargs: pytest.fail(
+        "Explicit score math must not use the IAttention decomposition"))
+    output = graph_ops.add_attention_from_rows(
+        _Network(), *tensors, num_heads=4, num_kv_heads=1, head_dim=8,
+        q_seq=3, kv_seq=7, mask=mask, scale=0.25, logit_softcap=softcap,
+        fp32_scores=fp32_scores)
+    assert output.dtype == trt.bfloat16
+    assert seen == {"num_heads": 4, "num_kv_heads": 1, "head_dim": 8,
+                    "mask": mask, "scale": 0.25, "logit_softcap": softcap}
+    with pytest.raises(NotImplementedError, match="explicit additive mask"):
+        graph_ops.add_attention_from_rows(
+            _Network(), *tensors, num_heads=4, num_kv_heads=1, head_dim=8,
+            q_seq=3, kv_seq=7, causal=True, fp32_scores=True)
