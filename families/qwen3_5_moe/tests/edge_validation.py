@@ -73,10 +73,11 @@ def extract_bundle(bundle: Path, destination: Path, *, allow_native: bool = Fals
             if type(capacity) is not int or capacity <= 1:
                 raise ValueError("Invalid native context capacity")
             task = header["task"]
-            if task not in {"text_generation", "images_text_to_text"}:
+            media = task in {"vision_language_generation", "images_text_to_text"}
+            if task != "text_generation" and not media:
                 raise ValueError("Unexpected native Qwen3.5-MoE task")
             visual = None
-            if task == "images_text_to_text":
+            if media:
                 if seek_section("native_visual.plan") == 0:
                     raise ValueError("Empty native visual engine")
                 visual = read_metadata("native_visual.json")

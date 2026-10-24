@@ -108,7 +108,8 @@ int main(int argc, char** argv) {
         auto* generator = dynamic_cast<trtmc::ITextGeneration*>(task.get());
         auto* vision = dynamic_cast<trtmc::IVisionLanguageGeneration*>(task.get());
         const bool is_vision = bundle.info().task == "vision_language_generation";
-        const bool native_media = !expected_edge && bundle.info().task == "images_text_to_text";
+        const bool native_media =
+            !expected_edge && (is_vision || bundle.info().task == "images_text_to_text");
         if (native_media) {
             if (!generator || !vision ||
                 !dynamic_cast<trtmc::internal::IImagesTextToText*>(task.get()) ||

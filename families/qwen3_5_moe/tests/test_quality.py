@@ -44,15 +44,17 @@ def test_independent_quality_requires_both_gates(gpu_passed, reference_passed):
     assert gpu == original_gpu
 
 
-@pytest.mark.parametrize("media", [False, True])
-def test_native_harness_reads_metadata_without_copying_engines(tmp_path, media):
+@pytest.mark.parametrize("task", [
+    "text_generation", "vision_language_generation", "images_text_to_text",
+])
+def test_native_harness_reads_metadata_without_copying_engines(tmp_path, task):
     """Native E2E uses its actual binding and the same existing raw/image/recovery cases."""
     from tensorrt_model_connect.bundle_writer import BundleWriter
     from families.qwen3_5_moe.tests.edge_validation import extract_bundle, requests
 
     bundle = tmp_path / "native.bundle"
     writer = BundleWriter(bundle)
-    task = "images_text_to_text" if media else "text_generation"
+    media = task != "text_generation"
     writer.set_header(family="qwen3_5_moe", task=task, backend="trt")
     writer.add_bytes("engine.plan", b"decoder")
     writer.add_json("runtime.json", {"max_cache_length": 1024})
@@ -89,13 +91,14 @@ def test_native_harness_reads_metadata_without_copying_engines(tmp_path, media):
     assert native_cases[recovery]["equal_to"] == ("image" if media else "raw")
 
 
-def test_native_harness_rejects_inconsistent_visual_capacity(tmp_path):
+@pytest.mark.parametrize("task", ["vision_language_generation", "images_text_to_text"])
+def test_native_harness_rejects_inconsistent_visual_capacity(tmp_path, task):
     from tensorrt_model_connect.bundle_writer import BundleWriter
     from families.qwen3_5_moe.tests.edge_validation import extract_bundle
 
     bundle = tmp_path / "native.bundle"
     writer = BundleWriter(bundle)
-    writer.set_header(family="qwen3_5_moe", task="images_text_to_text", backend="trt")
+    writer.set_header(family="qwen3_5_moe", task=task, backend="trt")
     writer.add_bytes("engine.plan", b"decoder")
     writer.add_json("runtime.json", {"max_cache_length": 1024})
     writer.add_bytes("native_visual.plan", b"visual")
