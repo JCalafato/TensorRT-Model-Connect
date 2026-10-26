@@ -24,7 +24,7 @@ namespace trtmc {
 
 // Host argmax uses the first maximum, matching deterministic greedy decoding.
 static Cosmos3EdgeSampleResult argmax_over_logits(const float* logits, int32_t vocab_size,
-                                              int32_t eos_token_id) {
+                                                  int32_t eos_token_id) {
     Cosmos3EdgeSampleResult result;
     const float* best = logits;
     for (int32_t i = 1; i < vocab_size; ++i) {
@@ -169,7 +169,7 @@ static FilteredDistribution build_filtered_distribution(const float* logits, int
 class GreedySampler final : public Cosmos3EdgeISampler {
   public:
     Cosmos3EdgeSampleResult sample(const float* logits, int32_t vocab_size,
-                               const Cosmos3EdgeSamplingParams& params) override {
+                                   const Cosmos3EdgeSamplingParams& params) override {
         if (vocab_size <= 0 || logits == nullptr) {
             Cosmos3EdgeSampleResult result;
             result.token_id = 0;
@@ -193,7 +193,7 @@ class TopKSampler final : public Cosmos3EdgeISampler {
           initial_seed_(initial_seed == 0 ? 1 : initial_seed) {}
 
     Cosmos3EdgeSampleResult sample(const float* logits, int32_t vocab_size,
-                               const Cosmos3EdgeSamplingParams& params) override {
+                                   const Cosmos3EdgeSamplingParams& params) override {
         Cosmos3EdgeSampleResult result;
 
         if (vocab_size <= 0 || logits == nullptr) {
@@ -241,7 +241,7 @@ class TopKSampler final : public Cosmos3EdgeISampler {
 // ─────────────────────────────────────────────────────────────
 
 Cosmos3EdgeSamplingParams cosmos3_edge_sampling_params_from_config(const TextGenerationConfig& cfg,
-                                                          int32_t default_eos) {
+                                                                   int32_t default_eos) {
     Cosmos3EdgeSamplingParams p;
     p.temperature = cfg.temperature;
     p.top_k = cfg.top_k;
@@ -252,7 +252,8 @@ Cosmos3EdgeSamplingParams cosmos3_edge_sampling_params_from_config(const TextGen
     return p;
 }
 
-std::unique_ptr<Cosmos3EdgeISampler> create_cosmos3_edge_sampler(const Cosmos3EdgeSamplingParams& params) {
+std::unique_ptr<Cosmos3EdgeISampler>
+create_cosmos3_edge_sampler(const Cosmos3EdgeSamplingParams& params) {
     // Greedy when sampling is fully disabled and no explicit random seed is set.
     const float top_p = sanitized_top_p(params.top_p);
     const float min_p = sanitized_min_p(params.min_p);

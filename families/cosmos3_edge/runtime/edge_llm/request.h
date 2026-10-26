@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
-#include "contract.h"
 #include "../request.h"
+#include "contract.h"
+
+#include <cstring>
 #include <edgellm/cpp/runtime/llmRuntimeUtils.h>
 #include <edgellm/cpp/runtime/streaming.h>
-#include <cstring>
 
 namespace trtmc::cosmos3_edge::edge_llm {
 using namespace internal;
@@ -34,16 +35,17 @@ inline void validate_response(const trt_edgellm::rt::LLMGenerationResponse& resp
         throw std::runtime_error("Cosmos3-Edge Edge clipped the original generation budget");
 }
 
-
 /// Validate the source view before allocating or reading its byte storage.
 inline size_t image_elements(ImageView image) {
     if (!image.data || image.height == 0 || image.width == 0 || image.channels != 3 ||
         (image.format != ImageFormat::UInt8 && image.format != ImageFormat::Float32))
         throw std::invalid_argument("Cosmos3-Edge requires nonempty uint8 or float32 HWC RGB");
     const size_t item = image.format == ImageFormat::Float32 ? sizeof(float) : 1;
-    const size_t maximum = std::min(size_t(std::numeric_limits<int64_t>::max()),
-                                    std::numeric_limits<size_t>::max()) / item;
-    if (size_t(image.width) > maximum / 3 || size_t(image.height) > maximum / (size_t(image.width) * 3))
+    const size_t maximum =
+        std::min(size_t(std::numeric_limits<int64_t>::max()), std::numeric_limits<size_t>::max()) /
+        item;
+    if (size_t(image.width) > maximum / 3 ||
+        size_t(image.height) > maximum / (size_t(image.width) * 3))
         throw std::invalid_argument("Cosmos3-Edge image dimensions overflow");
     const size_t count = size_t(image.height) * image.width * 3;
     if (image.byte_size < count * item)
@@ -52,7 +54,8 @@ inline size_t image_elements(ImageView image) {
 }
 
 inline trt_edgellm::rt::imageUtils::ImageData image_data(Span<const ImageView> frames, bool video) {
-    if (frames.empty()) throw std::invalid_argument("Cosmos3-Edge video requires frames");
+    if (frames.empty())
+        throw std::invalid_argument("Cosmos3-Edge video requires frames");
     const auto first = frames[0];
     const size_t elements = image_elements(first);
     if (frames.size() > size_t(std::numeric_limits<int64_t>::max()) / elements)
@@ -63,15 +66,17 @@ inline trt_edgellm::rt::imageUtils::ImageData image_data(Span<const ImageView> f
             throw std::invalid_argument("Cosmos3-Edge video requires equal frame dimensions");
     }
     trt_edgellm::rt::Tensor tensor({int64_t(frames.size()), first.height, first.width, 3},
-        trt_edgellm::rt::DeviceType::kCPU, nvinfer1::DataType::kUINT8);
+                                   trt_edgellm::rt::DeviceType::kCPU, nvinfer1::DataType::kUINT8);
     auto* output = static_cast<uint8_t*>(tensor.rawPointer());
     for (const auto& frame : frames) {
-        if (frame.format == ImageFormat::UInt8) std::memcpy(output, frame.data, elements);
+        if (frame.format == ImageFormat::UInt8)
+            std::memcpy(output, frame.data, elements);
         else {
             const auto* input = static_cast<const float*>(frame.data);
             for (size_t i = 0; i < elements; ++i) {
                 if (!std::isfinite(input[i]) || input[i] < 0 || input[i] > 1)
-                    throw std::invalid_argument("Cosmos3-Edge float images require finite values in [0, 1]");
+                    throw std::invalid_argument(
+                        "Cosmos3-Edge float images require finite values in [0, 1]");
                 output[i] = uint8_t(std::round(input[i] * 255.0F));
             }
         }
@@ -84,13 +89,16 @@ inline trt_edgellm::rt::imageUtils::ImageData image_data(Span<const ImageView> f
 }
 
 /// Map supplied frames and timestamps to Edge's actual video carrier, never image-list emulation.
-inline trt_edgellm::rt::LLMGenerationRequest make_request(
-        Span<const ImageVideoTextMessage> messages, const TextGenerationConfig& cfg, int capacity) {
+inline trt_edgellm::rt::LLMGenerationRequest
+make_request(Span<const ImageVideoTextMessage> messages, const TextGenerationConfig& cfg,
+             int capacity) {
     validate_request(cfg);
     if (cfg.min_p != 0 || cfg.repetition_penalty != 1 || cfg.top_k < 0 || cfg.top_p <= 0)
-        throw std::invalid_argument("Requested sampling control is not exposed by Cosmos3-Edge offload");
+        throw std::invalid_argument(
+            "Requested sampling control is not exposed by Cosmos3-Edge offload");
     if (messages.empty() || cfg.max_new_tokens >= capacity)
-        throw std::invalid_argument("Cosmos3-Edge requires a prompt and room for the output budget");
+        throw std::invalid_argument(
+            "Cosmos3-Edge requires a prompt and room for the output budget");
     if (!cfg.use_chat_template && (messages.size() != 1 || !cfg.system_prompt.empty()))
         throw std::invalid_argument("Cosmos3-Edge multi-message prompts require the chat template");
     trt_edgellm::rt::LLMGenerationRequest result{};
@@ -113,23 +121,28 @@ inline trt_edgellm::rt::LLMGenerationRequest make_request(
                 continue;
             }
             if (message.role == MessageRole::Assistant || message.role == MessageRole::System)
-                throw std::invalid_argument("Cosmos3-Edge assistant and system history must contain text");
+                throw std::invalid_argument(
+                    "Cosmos3-Edge assistant and system history must contain text");
             if (const auto* image = std::get_if<ImageView>(&part)) {
                 target.contents.push_back({"image", ""});
                 request.imageBuffers.push_back(image_data({image, 1}, false));
             } else {
                 const auto& video = std::get<VideoView>(part);
-                if (video.frames.size() > size_t(capacity) || (!video.timestamps_seconds.empty() &&
-                    video.timestamps_seconds.size() != video.frames.size()))
-                    throw std::invalid_argument("Cosmos3-Edge requires one timestamp per video frame");
+                if (video.frames.size() > size_t(capacity) ||
+                    (!video.timestamps_seconds.empty() &&
+                     video.timestamps_seconds.size() != video.frames.size()))
+                    throw std::invalid_argument(
+                        "Cosmos3-Edge requires one timestamp per video frame");
                 double previous = -1;
                 for (double timestamp : video.timestamps_seconds) {
                     if (!std::isfinite(timestamp) || timestamp < 0 || timestamp < previous)
-                        throw std::invalid_argument("Cosmos3-Edge requires ordered nonnegative timestamps");
+                        throw std::invalid_argument(
+                            "Cosmos3-Edge requires ordered nonnegative timestamps");
                     previous = timestamp;
                 }
                 auto data = image_data(video.frames, true);
-                for (double timestamp : video.timestamps_seconds) data.timestamps.push_back(timestamp);
+                for (double timestamp : video.timestamps_seconds)
+                    data.timestamps.push_back(timestamp);
                 target.contents.push_back({"video", ""});
                 request.imageBuffers.push_back(std::move(data));
             }
@@ -141,7 +154,8 @@ inline trt_edgellm::rt::LLMGenerationRequest make_request(
     result.topK = cfg.top_k;
     result.topP = cfg.top_p;
     result.maxGenerateLength = cfg.max_new_tokens;
-    if (cfg.seed >= 0) result.samplingSeed = uint64_t(cfg.seed);
+    if (cfg.seed >= 0)
+        result.samplingSeed = uint64_t(cfg.seed);
     return result;
 }
 } // namespace trtmc::cosmos3_edge::edge_llm

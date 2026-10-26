@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "families/cosmos3_edge/runtime/edge_llm/request.h"
+
 #include <iostream>
 
 using namespace trtmc;
@@ -10,17 +11,23 @@ using namespace trtmc::internal;
 using namespace trtmc::cosmos3_edge::edge_llm;
 
 void require(bool condition) {
-    if (!condition) throw std::runtime_error("Cosmos3-Edge request contract regression");
+    if (!condition)
+        throw std::runtime_error("Cosmos3-Edge request contract regression");
 }
-template<class F> void rejected(F fn) {
-    try { fn(); } catch (const std::invalid_argument&) { return; }
+template <class F>
+void rejected(F fn) {
+    try {
+        fn();
+    } catch (const std::invalid_argument&) {
+        return;
+    }
     throw std::runtime_error("Invalid Cosmos3-Edge request was accepted");
 }
 int main() {
     try {
         uint8_t pixels[]{0, 128, 255, 255, 128, 0};
-        ImageView frames[]{ {pixels, 3, 1, 1, 3, ImageFormat::UInt8},
-                            {pixels + 3, 3, 1, 1, 3, ImageFormat::UInt8} };
+        ImageView frames[]{{pixels, 3, 1, 1, 3, ImageFormat::UInt8},
+                           {pixels + 3, 3, 1, 1, 3, ImageFormat::UInt8}};
         double stamps[]{0.25, 2.75};
         VideoView video{{frames, 2}, {stamps, 2}};
         std::vector<ImageVideoTextPart> parts{video, TextPartView{"Describe the action."}};
@@ -34,7 +41,8 @@ int main() {
         require(request.maxGenerateLength == 16);
         require(request.requests[0].messages[0].contents[0].type == "video");
         const auto& data = request.requests[0].imageBuffers[0];
-        require(data.isVideo && data.frames == 2 && data.timestamps == std::vector<double>({0.25, 2.75}));
+        require(data.isVideo && data.frames == 2 &&
+                data.timestamps == std::vector<double>({0.25, 2.75}));
         require(std::memcmp(data.data(), pixels, sizeof(pixels)) == 0);
         stamps[1] = 0.1;
         rejected([&] { make_request({&message, 1}, config, 128); });

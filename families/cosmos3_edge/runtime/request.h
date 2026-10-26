@@ -6,6 +6,7 @@
 #include "trtmc/internal/language.h"
 #include "trtmc/internal/model.h"
 #include "trtmc/internal/text.h"
+
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -32,7 +33,8 @@ inline Span<const ConfigField> field_view(bool media = true) {
     static const auto text_fields = [] {
         auto copy = fields();
         for (auto& field : copy)
-            if (field.name == "use_chat_template") field.default_value = false;
+            if (field.name == "use_chat_template")
+                field.default_value = false;
         return copy;
     }();
     const auto& selected = media ? fields() : text_fields;
@@ -47,7 +49,9 @@ inline TextGenerationConfig read_config(ConfigView supplied, bool media = true) 
             throw ConfigError(std::string(name) + " is outside int32 range");
         return static_cast<int32_t>(n);
     };
-    c.max_new_tokens = integer("max_new_tokens"); c.top_k = integer("top_k"); c.seed = integer("seed");
+    c.max_new_tokens = integer("max_new_tokens");
+    c.top_k = integer("top_k");
+    c.seed = integer("seed");
     c.temperature = *config_get<double>(supplied, field_view(media), "temperature");
     c.top_p = *config_get<double>(supplied, field_view(media), "top_p");
     c.min_p = *config_get<double>(supplied, field_view(media), "min_p");
@@ -59,9 +63,9 @@ inline TextGenerationConfig read_config(ConfigView supplied, bool media = true) 
 }
 inline void validate_request(const TextGenerationConfig& c) {
     if (c.max_new_tokens <= 0 || !std::isfinite(c.temperature) || c.temperature < 0 ||
-        !std::isfinite(c.top_p) || c.top_p < 0 || c.top_p > 1 ||
-        !std::isfinite(c.min_p) || c.min_p < 0 || c.min_p > 1 || c.seed < -1 ||
-        !std::isfinite(c.repetition_penalty) || c.repetition_penalty <= 0)
+        !std::isfinite(c.top_p) || c.top_p < 0 || c.top_p > 1 || !std::isfinite(c.min_p) ||
+        c.min_p < 0 || c.min_p > 1 || c.seed < -1 || !std::isfinite(c.repetition_penalty) ||
+        c.repetition_penalty <= 0)
         throw std::invalid_argument("Invalid Cosmos3-Edge sampling configuration");
     if (c.eos_token_id != -1 || c.source_language_token_id != -1 || c.forced_bos_token_id != -1 ||
         c.guidance_scale != -1 || c.cfg_scale != -1 || c.num_steps != -1 || c.sde_gamma != -1 ||
@@ -69,15 +73,21 @@ inline void validate_request(const TextGenerationConfig& c) {
         !c.sampling_steps.empty() || !c.sde_noises.empty() || c.block_length != 0 ||
         c.confidence_threshold != -1 || c.stop_on_boxed_answer || !c.lora_adapter_id.empty() ||
         (c.text_generation_mode != "auto" && c.text_generation_mode != "autoregressive"))
-        throw std::invalid_argument("Cosmos3-Edge reasoning does not implement the requested generation control");
+        throw std::invalid_argument(
+            "Cosmos3-Edge reasoning does not implement the requested generation control");
 }
 inline std::string role_name(MessageRole role) {
     switch (role) {
-    case MessageRole::System: return "system";
-    case MessageRole::Developer: return "developer";
-    case MessageRole::User: return "user";
-    case MessageRole::Assistant: return "assistant";
-    default: throw std::invalid_argument("Cosmos3-Edge reasoning task does not expose tool messages");
+    case MessageRole::System:
+        return "system";
+    case MessageRole::Developer:
+        return "developer";
+    case MessageRole::User:
+        return "user";
+    case MessageRole::Assistant:
+        return "assistant";
+    default:
+        throw std::invalid_argument("Cosmos3-Edge reasoning task does not expose tool messages");
     }
 }
 } // namespace trtmc::cosmos3_edge

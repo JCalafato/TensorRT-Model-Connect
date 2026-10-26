@@ -4,6 +4,7 @@
  */
 #pragma once
 #include "trtmc/internal/image.h"
+
 #include <array>
 #include <vector>
 
@@ -15,9 +16,8 @@ struct Frame {
     int cols() const { return width / patch; }
     int tokens() const { return rows() * cols() / (merge * merge); }
 };
-Frame plan_frame(internal::ImageView image, int patch, int merge, int frames,
-                 int min_pixels, int max_pixels, int max_patches);
+Frame plan_frame(internal::ImageView image, int patch, int merge, int frames, int min_pixels,
+                 int max_pixels, int max_patches);
 std::vector<float> patchify(const Frame& frame);
-void interpolate_positions(const Frame& frame, int table_side,
-                           std::vector<float>& weights);
+void interpolate_positions(const Frame& frame, int table_side, std::vector<float>& weights);
 } // namespace trtmc::cosmos3_edge

@@ -87,9 +87,10 @@ class Artifacts {
               "edge_llm/engine/chat_template.jinja", "edge_llm/checkpoint/config.json",
               "edge_llm/checkpoint/model.safetensors.index.json"})
             if (!names.count(required) || bundle.find_section(required)->length == 0)
-                throw std::runtime_error(std::string("Required Cosmos3-Edge Edge artifact missing: ") +
-                                         required);
-        std::string pattern = (fs::temp_directory_path() / "trtmc-cosmos3_edge-edge-XXXXXX").string();
+                throw std::runtime_error(
+                    std::string("Required Cosmos3-Edge Edge artifact missing: ") + required);
+        std::string pattern =
+            (fs::temp_directory_path() / "trtmc-cosmos3_edge-edge-XXXXXX").string();
         if (!mkdtemp(pattern.data()))
             throw std::runtime_error("Cannot create Cosmos3-Edge Edge artifact directory");
         root_ = pattern;
@@ -163,9 +164,13 @@ class Stream {
 };
 
 /// Persistent complete-network runtime. All native task contracts stay family-owned.
-class EdgeTask final : public ITextGeneration, public IVisionLanguageGeneration,
-                       public IModel, public ITextContinuation, public IImageVideoTextToText,
-                       public IImagesTextToText, public IVideoTextToText {
+class EdgeTask final : public ITextGeneration,
+                       public IVisionLanguageGeneration,
+                       public IModel,
+                       public ITextContinuation,
+                       public IImageVideoTextToText,
+                       public IImagesTextToText,
+                       public IVideoTextToText {
   public:
     EdgeTask(const BundleReader& bundle, const nlohmann::json& marker)
         : artifacts_(bundle, marker), plugin_(load_plugin()),
@@ -179,7 +184,8 @@ class EdgeTask final : public ITextGeneration, public IVisionLanguageGeneration,
     int32_t default_max_new_tokens() const override { return 128; }
     std::vector<TaskInstance> task_bindings() override {
         return {bind<ITextContinuation>(*this, field_view(false)),
-                bind<IImagesTextToText>(*this, field_view()), bind<IVideoTextToText>(*this, field_view()),
+                bind<IImagesTextToText>(*this, field_view()),
+                bind<IVideoTextToText>(*this, field_view()),
                 bind<IImageVideoTextToText>(*this, field_view())};
     }
     TextResult generate(const std::string& text, const TextGenerationConfig& cfg) override {
@@ -189,45 +195,57 @@ class EdgeTask final : public ITextGeneration, public IVisionLanguageGeneration,
     }
     TextResult generate(const std::string& text, const float* pixels, int32_t h, int32_t w,
                         const TextGenerationConfig& cfg) override {
-        if (h <= 0 || w <= 0) throw std::invalid_argument("Cosmos3-Edge image dimensions must be positive");
-        std::vector<ImageVideoTextPart> parts{
-            ImageView{pixels, size_t(h) * w * 3 * sizeof(float), uint32_t(h), uint32_t(w), 3, ImageFormat::Float32},
-            TextPartView{text}};
+        if (h <= 0 || w <= 0)
+            throw std::invalid_argument("Cosmos3-Edge image dimensions must be positive");
+        std::vector<ImageVideoTextPart> parts{ImageView{pixels, size_t(h) * w * 3 * sizeof(float),
+                                                        uint32_t(h), uint32_t(w), 3,
+                                                        ImageFormat::Float32},
+                                              TextPartView{text}};
         ImageVideoTextMessage message{MessageRole::User, {parts.data(), parts.size()}};
         return execute({&message, 1}, cfg);
     }
     TextResult run(const TextContinuationRequest& input, ConfigView supplied) override {
         const auto* text = std::get_if<std::string_view>(&input.prefix);
-        if (!text) throw std::invalid_argument("Cosmos3-Edge continuation accepts text, not raw token IDs");
+        if (!text)
+            throw std::invalid_argument(
+                "Cosmos3-Edge continuation accepts text, not raw token IDs");
         return generate(std::string(*text), read_config(supplied, false));
     }
     TextResult run(const ImageVideoTextToTextRequest& input, ConfigView supplied) override {
         return execute(input.messages, read_config(supplied));
     }
 
-
     TextResult run(const ImagesTextToTextRequest& input, ConfigView supplied) override {
-        if (!input.tools.empty()) throw std::invalid_argument("Cosmos3-Edge reasoning does not expose tools");
+        if (!input.tools.empty())
+            throw std::invalid_argument("Cosmos3-Edge reasoning does not expose tools");
         return media_messages(input.messages, supplied);
     }
     TextResult run(const VideoTextToTextRequest& input, ConfigView supplied) override {
-        if (!input.tools.empty()) throw std::invalid_argument("Cosmos3-Edge reasoning does not expose tools");
+        if (!input.tools.empty())
+            throw std::invalid_argument("Cosmos3-Edge reasoning does not expose tools");
         return media_messages(input.messages, supplied);
     }
-    template<class Part>
+    template <class Part>
     TextResult media_messages(Span<const MediaMessage<Part>> input, ConfigView supplied) {
         std::vector<std::vector<ImageVideoTextPart>> storage;
         std::vector<ImageVideoTextMessage> messages;
-        storage.reserve(input.size()); messages.reserve(input.size());
+        storage.reserve(input.size());
+        messages.reserve(input.size());
         for (const auto& source : input) {
             storage.emplace_back();
             for (const auto& part : source.parts) {
-                std::visit([&](const auto& value) {
-                    using Value = std::decay_t<decltype(value)>;
-                    if constexpr (std::is_same_v<Value, TextPartView> || std::is_same_v<Value, ImageView> || std::is_same_v<Value, VideoView>)
-                        storage.back().emplace_back(value);
-                    else throw std::invalid_argument("Cosmos3-Edge reasoning task requires text or visual media parts");
-                }, part);
+                std::visit(
+                    [&](const auto& value) {
+                        using Value = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<Value, TextPartView> ||
+                                      std::is_same_v<Value, ImageView> ||
+                                      std::is_same_v<Value, VideoView>)
+                            storage.back().emplace_back(value);
+                        else
+                            throw std::invalid_argument(
+                                "Cosmos3-Edge reasoning task requires text or visual media parts");
+                    },
+                    part);
             }
             messages.push_back({source.role, {storage.back().data(), storage.back().size()}});
         }
@@ -244,7 +262,8 @@ class EdgeTask final : public ITextGeneration, public IVisionLanguageGeneration,
     int capacity_, input_limit_;
     std::mutex mutex_;
 
-    TextResult execute(Span<const ImageVideoTextMessage> messages, const TextGenerationConfig& cfg) {
+    TextResult execute(Span<const ImageVideoTextMessage> messages,
+                       const TextGenerationConfig& cfg) {
         auto request = make_request(messages, cfg, capacity_);
         const auto budget = request.maxGenerateLength;
         std::lock_guard<std::mutex> lock(mutex_);

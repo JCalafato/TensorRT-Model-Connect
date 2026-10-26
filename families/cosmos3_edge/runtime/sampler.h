@@ -39,7 +39,7 @@ class Cosmos3EdgeISampler {
     /// vocab_size: number of logit values.
     /// params: sampling parameters for this step.
     virtual Cosmos3EdgeSampleResult sample(const float* logits, int32_t vocab_size,
-                                       const Cosmos3EdgeSamplingParams& params) = 0;
+                                           const Cosmos3EdgeSamplingParams& params) = 0;
     /// Reset sampler state (e.g., RNG state between sequences).
     virtual void reset() {}
 };
@@ -49,9 +49,10 @@ class Cosmos3EdgeISampler {
 struct TextGenerationConfig; // defined in trtmc/task.h
 
 Cosmos3EdgeSamplingParams cosmos3_edge_sampling_params_from_config(const TextGenerationConfig& cfg,
-                                                          int32_t default_eos = -1);
+                                                                   int32_t default_eos = -1);
 
 /// Create the exact host sampler selected by the request.
-std::unique_ptr<Cosmos3EdgeISampler> create_cosmos3_edge_sampler(const Cosmos3EdgeSamplingParams& params);
+std::unique_ptr<Cosmos3EdgeISampler>
+create_cosmos3_edge_sampler(const Cosmos3EdgeSamplingParams& params);
 
 } // namespace trtmc

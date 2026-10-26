@@ -16,6 +16,7 @@ class Tokenizer {
     ~Tokenizer();
     std::vector<int32_t> encode(std::string_view text) const;
     std::string decode(const std::vector<int32_t>& ids) const;
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

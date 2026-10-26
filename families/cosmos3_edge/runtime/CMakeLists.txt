@@ -26,4 +26,10 @@ if(TRTMC_BUILD_TESTS)
   target_include_directories(test_cosmos3_edge_media PRIVATE
     ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/core/runtime/include)
   add_test(NAME test_cosmos3_edge_media COMMAND test_cosmos3_edge_media)
+  add_executable(test_cosmos3_edge_tokenizer ../tests/cpp/test_tokenizer.cpp tokenizer.cpp)
+  target_include_directories(test_cosmos3_edge_tokenizer PRIVATE ${PROJECT_SOURCE_DIR})
+  target_link_libraries(test_cosmos3_edge_tokenizer PRIVATE
+    nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  add_test(NAME test_cosmos3_edge_tokenizer COMMAND test_cosmos3_edge_tokenizer)
+  add_dependencies(trtmc_model_cosmos3_edge test_cosmos3_edge_tokenizer)
 endif()

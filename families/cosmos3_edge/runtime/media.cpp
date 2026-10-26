@@ -3,11 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "media.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 namespace trtmc::cosmos3_edge {
-template<class F> void parallel_for_ranges(int32_t count, int32_t, F&& f) { f(0, count); }
+template <class F>
+void parallel_for_ranges(int32_t count, int32_t, F&& f) {
+    f(0, count);
+}
 struct AntialiasWeights {
     std::vector<int32_t> starts;
     std::vector<int32_t> sizes;
@@ -177,10 +181,9 @@ static std::vector<unsigned char> resize_bicubic_vertical(const unsigned char* r
     return resized;
 }
 
-std::vector<unsigned char> resize_bicubic_antialias_u8(const unsigned char* raw,
-                                                               int32_t width, int32_t height,
-                                                               int32_t target_width,
-                                                               int32_t target_height) {
+std::vector<unsigned char> resize_bicubic_antialias_u8(const unsigned char* raw, int32_t width,
+                                                       int32_t height, int32_t target_width,
+                                                       int32_t target_height) {
     if (!valid_resize_dimensions(raw, width, height, target_width, target_height))
         return {};
     if (width == target_width && height == target_height) {
@@ -200,14 +203,14 @@ std::vector<unsigned char> resize_bicubic_antialias_u8(const unsigned char* raw,
     return resize_bicubic_vertical(vertical_source, target_width, height, target_height);
 }
 
-
-Frame plan_frame(internal::ImageView image, int patch, int merge, int frames,
-                 int min_pixels, int max_pixels, int max_patches) {
+Frame plan_frame(internal::ImageView image, int patch, int merge, int frames, int min_pixels,
+                 int max_pixels, int max_patches) {
     if (!image.data || image.height == 0 || image.width == 0 || image.channels != 3 ||
         image.height > 100000 || image.width > 100000 || patch <= 0 || merge <= 0 || frames <= 0)
         throw std::invalid_argument("Cosmos3-Edge requires nonempty RGB frames");
     const size_t bytes_per_pixel = image.format == internal::ImageFormat::UInt8 ? 1 : 4;
-    if (image.format != internal::ImageFormat::UInt8 && image.format != internal::ImageFormat::Float32)
+    if (image.format != internal::ImageFormat::UInt8 &&
+        image.format != internal::ImageFormat::Float32)
         throw std::invalid_argument("Cosmos3-Edge requires uint8 or float32 pixels");
     if (image.byte_size != size_t(image.height) * image.width * 3 * bytes_per_pixel)
         throw std::invalid_argument("Cosmos3-Edge image byte count does not match its dimensions");
@@ -215,7 +218,8 @@ Frame plan_frame(internal::ImageView image, int patch, int merge, int frames,
     int height = image.height, width = image.width;
     if (std::min(height, width) < factor) {
         const double scale = double(factor) / std::min(height, width);
-        height = int(height * scale); width = int(width * scale);
+        height = int(height * scale);
+        width = int(width * scale);
     }
     if (double(std::max(height, width)) / std::min(height, width) > 200)
         throw std::invalid_argument("Cosmos3-Edge frame aspect ratio exceeds 200");
@@ -245,13 +249,14 @@ std::vector<float> patchify(const Frame& frame) {
         converted.resize(count);
         for (size_t i = 0; i < count; ++i) {
             if (!std::isfinite(values[i]) || values[i] < 0 || values[i] > 1)
-                throw std::invalid_argument("Cosmos3-Edge float RGB pixels must be finite in [0,1]");
+                throw std::invalid_argument(
+                    "Cosmos3-Edge float RGB pixels must be finite in [0,1]");
             converted[i] = static_cast<uint8_t>(std::nearbyint(values[i] * 255.0F));
         }
         source = converted.data();
     }
-    const auto pixels = resize_bicubic_antialias_u8(source, image.width, image.height,
-                                                   frame.width, frame.height);
+    const auto pixels =
+        resize_bicubic_antialias_u8(source, image.width, image.height, frame.width, frame.height);
     std::vector<float> result;
     result.reserve(size_t(frame.height) * frame.width * 3);
     for (int by = 0; by < frame.rows(); by += frame.merge)
@@ -261,15 +266,19 @@ std::vector<float> patchify(const Frame& frame) {
                     for (int y = 0; y < frame.patch; ++y)
                         for (int x = 0; x < frame.patch; ++x)
                             for (int c = 0; c < 3; ++c) {
-                                const size_t at = (size_t((by + dy) * frame.patch + y) * frame.width +
-                                                   (bx + dx) * frame.patch + x) * 3 + c;
+                                const size_t at =
+                                    (size_t((by + dy) * frame.patch + y) * frame.width +
+                                     (bx + dx) * frame.patch + x) *
+                                        3 +
+                                    c;
                                 result.push_back((pixels[at] / 255.0F - 0.5F) / 0.5F);
                             }
     return result;
 }
 
 void interpolate_positions(const Frame& frame, int table_side, std::vector<float>& weights) {
-    if (table_side <= 0) throw std::invalid_argument("Invalid Cosmos3-Edge position table");
+    if (table_side <= 0)
+        throw std::invalid_argument("Invalid Cosmos3-Edge position table");
     const auto axis = [table_side](int output_size) {
         std::vector<float> result(size_t(output_size) * table_side);
         const double scale = double(table_side) / output_size;
@@ -278,8 +287,10 @@ void interpolate_positions(const Frame& frame, int table_side, std::vector<float
             const double center = (out + 0.5) * scale;
             double sum = 0;
             for (int source = 0; source < table_side; ++source) {
-                const float value = float(std::max(0.0, 1.0 - std::abs((source + 0.5 - center) / support)));
-                result[size_t(out) * table_side + source] = value; sum += value;
+                const float value =
+                    float(std::max(0.0, 1.0 - std::abs((source + 0.5 - center) / support)));
+                result[size_t(out) * table_side + source] = value;
+                sum += value;
             }
             for (int source = 0; source < table_side; ++source)
                 result[size_t(out) * table_side + source] /= float(sum);
@@ -297,6 +308,7 @@ void interpolate_positions(const Frame& frame, int table_side, std::vector<float
                     for (int y = 0; y < table_side; ++y)
                         for (int x = 0; x < table_side; ++x)
                             weights[size_t(row) * table_size + y * table_side + x] =
-                                ys[size_t(by + dy) * table_side + y] * xs[size_t(bx + dx) * table_side + x];
+                                ys[size_t(by + dy) * table_side + y] *
+                                xs[size_t(bx + dx) * table_side + x];
 }
 } // namespace trtmc::cosmos3_edge

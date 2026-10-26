@@ -106,7 +106,7 @@ def test_hf_cache_shard_links_are_read_without_copying(tmp_path):
     torch = pytest.importorskip("torch")
     from safetensors.torch import save_file
 
-    blobs = tmp_path / "models--nvidia--Cosmos3-Edge/blobs"
+    blobs = tmp_path / "models--example--reasoner/blobs"
     blobs.mkdir(parents=True)
     root = blobs.parent / "snapshots/revision"
     (root / "transformer").mkdir(parents=True)
