@@ -9,6 +9,7 @@ failure remains a failure, not an xfail or a reason to suppress the adapter.
 """
 
 from pathlib import Path
+import hashlib
 import json
 import os
 import subprocess
@@ -243,7 +244,13 @@ def test_runner_does_not_configure_an_undeclared_tree(tmp_path, monkeypatch, tar
         _runner(tmp_path / "wheel", target)
 
 
-def test_reference_integrity():
+def test_reference_integrity(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setattr(
+        huggingface_hub, "hf_hub_download", lambda *a, **kw: pytest.fail("fixture download")
+    )
     assert REFERENCE["reference_backend"] == "vllm==0.20.0"
     assert {row["id"] for row in REFERENCE["cases"]} == {
         "text",
@@ -256,7 +263,12 @@ def test_reference_integrity():
     assert REFERENCE["sampling"] == {"temperature": 0, "top_p": 1, "max_tokens": 96, "seed": 0}
     for name, asset in REFERENCE["assets"].items():
         if "local" in asset:
-            _asset(name)
+            path = _asset(name)
+            if "sha256" in asset:
+                assert hashlib.sha256(path.read_bytes()).hexdigest() == asset["sha256"]
+    ids = [row["id"] for row in REFERENCE["cases"]]
+    requests, expected = make_inputs(ids, tmp_path / "fixtures")
+    assert [row["id"] for row in requests] == [row["id"] for row in expected] == ids
     for manifest, case in CASES.values():
         assert manifest["hf_id"] == REFERENCE["model"]
         assert manifest["hf_revision"] == REFERENCE["revision"]

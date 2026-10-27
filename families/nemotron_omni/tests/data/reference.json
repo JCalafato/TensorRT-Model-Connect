@@ -35,7 +35,9 @@
     "example_reasoning_input.png": {
       "repo_id": "nvidia/Cosmos3-Edge",
       "revision": "344d602b128d1bbdacb43b08d0a3626f46343e29",
-      "filename": "assets/example_reasoning_input.png"
+      "filename": "assets/example_reasoning_input.png",
+      "local": "example_reasoning_input.png",
+      "sha256": "6686b937bdb28e2c9804c435bd63a7ab56ac1531ffc9b482f2b8a75aed8770f5"
     },
     "example_action_id_av_0_input.mp4": {
       "repo_id": "nvidia/Cosmos3-Edge",
