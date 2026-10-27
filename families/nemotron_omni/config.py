@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Exact nested Omni architecture; no unrelated checkpoint-schema heuristics."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,14 +38,25 @@ class DecoderConfig:
     def from_dict(cls, raw):
         if not isinstance(raw, dict) or raw.get("model_type") != "nemotron_h":
             raise ValueError("Omni requires its nested Nemotron-H language configuration")
-        fields = ("vocab_size", "hidden_size", "intermediate_size", "num_hidden_layers",
-                  "num_attention_heads", "num_key_value_heads", "head_dim", "max_position_embeddings")
+        fields = (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "max_position_embeddings",
+        )
         values = {key: positive(raw.get(key), key) for key in fields}
         if values["num_attention_heads"] % values["num_key_value_heads"]:
             raise ValueError("Omni attention heads must divide into complete KV groups")
         pattern = raw.get("hybrid_override_pattern")
-        if (not isinstance(pattern, str) or len(pattern) != values["num_hidden_layers"]
-                or any(ch not in "ME*-" for ch in pattern)):
+        if (
+            not isinstance(pattern, str)
+            or len(pattern) != values["num_hidden_layers"]
+            or any(ch not in "ME*-" for ch in pattern)
+        ):
             raise ValueError("Omni hybrid pattern must specify every decoder layer")
         eps = raw.get("layer_norm_epsilon", raw.get("norm_eps", 1e-5))
         if type(eps) not in (float, int) or not 0 < eps < 1:

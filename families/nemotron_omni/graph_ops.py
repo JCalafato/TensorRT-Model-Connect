@@ -12,8 +12,6 @@ import numpy as np
 import tensorrt as trt
 
 
-
-
 def _cast_back_to_trt_dtype(
     network: trt.INetworkDefinition,
     tensor: trt.ITensor,
@@ -334,7 +332,6 @@ def add_activation(
         raise ValueError(f"Unsupported activation: {activation_type}")
 
 
-
 # ---------------------------------------------------------------------------
 # TRT 10 native attention APIs (TRT 10.x)
 #
@@ -616,8 +613,11 @@ def add_attention_core(
             query, trt.MatrixOperation.NONE, key, trt.MatrixOperation.TRANSPOSE
         ).get_output(0)
         if mask is not None:
-            mask_shape = ((1, 1, 1, q_rows, kv_rows) if mask.shape[1] == 1
-                          else (1, kv_heads, group, q_rows, kv_rows))
+            mask_shape = (
+                (1, 1, 1, q_rows, kv_rows)
+                if mask.shape[1] == 1
+                else (1, kv_heads, group, q_rows, kv_rows)
+            )
             scores = network.add_elementwise(
                 scores, reshape(mask, mask_shape), trt.ElementWiseOperation.SUM
             ).get_output(0)
@@ -634,8 +634,10 @@ def add_attention_core(
         probabilities.axes = 1 << 4
         probabilities.set_input(0, scores)
         context = network.add_matrix_multiply(
-            probabilities.get_output(0), trt.MatrixOperation.NONE,
-            value, trt.MatrixOperation.NONE,
+            probabilities.get_output(0),
+            trt.MatrixOperation.NONE,
+            value,
+            trt.MatrixOperation.NONE,
         ).get_output(0)
         return _cast_back_to_trt_dtype(
             network, reshape(context, (1, heads, q_rows, dim)), output_dtype
@@ -851,7 +853,8 @@ def add_attention_from_rows(
             fp32_accumulation=fp32_accumulation,
             decompose_attention=decompose_attention,
             static_geometry=(num_heads, kv_heads, head_dim, q_seq, kv_seq)
-            if q_seq is not None and kv_seq is not None else None,
+            if q_seq is not None and kv_seq is not None
+            else None,
         )
     return reshape_heads_4d_to_rows(
         network,

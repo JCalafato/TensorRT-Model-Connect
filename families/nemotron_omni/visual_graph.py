@@ -7,6 +7,7 @@ One trunk serves image patches and true multi-frame tubelet patches. Separate
 small patch graphs avoid duplicating the complete transformer for each modality.
 The owning C++ runtime provides position interpolation and pixel-shuffle indices.
 """
+
 from __future__ import annotations
 
 import tensorrt as trt
@@ -54,8 +55,9 @@ def build_visual(config, weights, max_patches, *, precision="fp32", verbose=Fals
     patches = _input(graph, "patch_embeddings", hidden, max_patches)
     positions = _input(graph, "position_embeddings", hidden, max_patches)
     shuffle = net.add_input("shuffle_indices", trt.int32, (-1, 4))
-    graph.profile.set_shape("shuffle_indices", (1, 4), (min(256, max_patches // 4), 4),
-                            (max_patches // 4, 4))
+    graph.profile.set_shape(
+        "shuffle_indices", (1, 4), (min(256, max_patches // 4), 4), (max_patches // 4, 4)
+    )
     registers = weights[root + ".patch_generator.cls_token.token"]
     if registers.ndim != 2 or registers.shape[1] != hidden or registers.shape[0] < 1:
         raise ValueError("Omni RADIO register tokens have invalid dimensions")
@@ -76,10 +78,14 @@ def build_visual(config, weights, max_patches, *, precision="fp32", verbose=Fals
         reorder = net.add_shuffle(attended)
         reorder.first_transpose = (1, 0, 2)
         reorder.reshape_dims = (-1, hidden)
-        state = graph.add(state, graph.linear(reorder.get_output(0), weights, prefix + ".attn.proj", bias=True))
+        state = graph.add(
+            state, graph.linear(reorder.get_output(0), weights, prefix + ".attn.proj", bias=True)
+        )
         normalized = graph.norm(state, weights, prefix + ".norm2", 1e-6, centered=True)
         feed_forward = graph.gelu(graph.linear(normalized, weights, prefix + ".mlp.fc1", bias=True))
-        state = graph.add(state, graph.linear(feed_forward, weights, prefix + ".mlp.fc2", bias=True))
+        state = graph.add(
+            state, graph.linear(feed_forward, weights, prefix + ".mlp.fc2", bias=True)
+        )
     # Offset the actual patch indices, excluding all position-free registers.
     indices = graph.add(shuffle, graph.constant([[registers.shape[0]]], trt.int32))
     gathered = net.add_gather(state, indices, 0).get_output(0)

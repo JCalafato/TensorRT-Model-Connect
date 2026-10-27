@@ -25,19 +25,29 @@ def build(request, writer, native, capacity: int):
     # Edge 0.11 typed video fails placeholder admission; acoustic execution can
     # fail in TensorRT CASK6. Those task bundles must use the complete native
     # implementation, not hide a command failure or substitute a text-only path.
-    edge_tasks = {"text_generation", "vision_language_generation", "text_continuation",
-                  "images_text_to_text"}
-    if (request.task not in edge_tasks or request.precision.lower() != "fp16"
-            or sys.platform != "linux" or not builder.package_present()):
+    edge_tasks = {
+        "text_generation",
+        "vision_language_generation",
+        "text_continuation",
+        "images_text_to_text",
+    }
+    if (
+        request.task not in edge_tasks
+        or request.precision.lower() != "fp16"
+        or sys.platform != "linux"
+        or not builder.package_present()
+    ):
         native(request, writer)
         return
     descriptor, name = tempfile.mkstemp(
-        prefix=f".{request.output_path.name}.edge-", suffix=".log", dir=request.output_path.parent)
+        prefix=f".{request.output_path.name}.edge-", suffix=".log", dir=request.output_path.parent
+    )
     os.close(descriptor)
     log_path = Path(name)
     failure = None
     with tempfile.TemporaryDirectory(
-            prefix=f".{request.output_path.name}.edge-", dir=request.output_path.parent) as directory:
+        prefix=f".{request.output_path.name}.edge-", dir=request.output_path.parent
+    ) as directory:
         try:
             target = builder.local_target()
             files, marker = builder.prepare(request, target, Path(directory), log_path, capacity)
@@ -47,7 +57,11 @@ def build(request, writer, native, capacity: int):
                 traceback.print_exception(error, file=log)
             _LOG.warning(
                 "Nemotron Omni build failed: %s. Diagnostics: %s. "
-                "Retrying native once with the unchanged request.", error, log_path, exc_info=True)
+                "Retrying native once with the unchanged request.",
+                error,
+                log_path,
+                exc_info=True,
+            )
         except BaseException:
             log_path.unlink(missing_ok=True)
             raise

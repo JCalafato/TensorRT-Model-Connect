@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Small immutable preprocessing assets for the owning native C++ runtime."""
+
 import numpy as np
 
 
@@ -17,7 +18,11 @@ def mel_filters():
     ramps = hz[:, None] - frequencies[None, :]
     weights = np.zeros((128, 257), dtype=np.float32)
     for index in range(128):
-        weights[index] = np.maximum(0.0, np.minimum(-ramps[index] / differences[index],
-                                                  ramps[index + 2] / differences[index + 1]))
+        weights[index] = np.maximum(
+            0.0,
+            np.minimum(
+                -ramps[index] / differences[index], ramps[index + 2] / differences[index + 1]
+            ),
+        )
     weights *= (2.0 / (hz[2:] - hz[:-2]))[:, None]
     return weights

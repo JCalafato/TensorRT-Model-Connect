@@ -108,16 +108,16 @@ std::vector<float> resample_phases(const float* samples, std::int32_t num_sample
 } // namespace
 
 std::vector<float> resample_pcm(const float* samples, std::int32_t num_samples,
-                                   std::int32_t source_rate, std::int32_t target_rate) {
+                                std::int32_t source_rate, std::int32_t target_rate) {
     if (num_samples <= 0)
         return {};
     return resample_pcm_range(samples, num_samples, source_rate, target_rate, 0,
-                                 output_length(num_samples, source_rate, target_rate));
+                              output_length(num_samples, source_rate, target_rate));
 }
 
 std::vector<float> resample_pcm_range(const float* samples, std::int32_t num_samples,
-                                         std::int32_t source_rate, std::int32_t target_rate,
-                                         std::int32_t output_start, std::int32_t output_count) {
+                                      std::int32_t source_rate, std::int32_t target_rate,
+                                      std::int32_t output_start, std::int32_t output_count) {
     if (samples == nullptr || num_samples <= 0 || source_rate <= 0 || target_rate <= 0)
         throw std::invalid_argument("resampler requires samples and positive dimensions");
     const auto full_length = output_length(num_samples, source_rate, target_rate);

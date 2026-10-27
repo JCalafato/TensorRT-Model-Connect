@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Independent acoustic input checks before complete-checkpoint qualification."""
+
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,9 +20,23 @@ def probe(tmp_path_factory):
         pytest.skip("Owning C++ frontend requires a C++ compiler")
     family = Path(__file__).parents[1]
     executable = tmp_path_factory.mktemp("omni-audio") / "probe"
-    subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
-                    "-I", str(family / "runtime"), str(family / "runtime/audio_frontend.cpp"),
-                    str(family / "tests/cpp/audio_frontend_probe.cpp"), "-o", str(executable)], check=True)
+    subprocess.run(
+        [
+            compiler,
+            "-std=c++17",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-I",
+            str(family / "runtime"),
+            str(family / "runtime/audio_frontend.cpp"),
+            str(family / "tests/cpp/audio_frontend_probe.cpp"),
+            "-o",
+            str(executable),
+        ],
+        check=True,
+    )
     return executable
 
 
@@ -43,8 +58,11 @@ def test_audio_features_match_hf(probe, tmp_path, length):
     pytest.importorskip("torch")
     pytest.importorskip("librosa")
     from transformers.models.parakeet.feature_extraction_parakeet import ParakeetFeatureExtractor
-    waveform = np.random.default_rng(17).normal(0, .2, length).astype(np.float32)
-    reference = ParakeetFeatureExtractor(feature_size=128)(waveform, sampling_rate=16000, return_tensors="np")
+
+    waveform = np.random.default_rng(17).normal(0, 0.2, length).astype(np.float32)
+    reference = ParakeetFeatureExtractor(feature_size=128)(
+        waveform, sampling_rate=16000, return_tensors="np"
+    )
     expected = reference["input_features"][0, reference["attention_mask"][0].astype(bool)]
     result = execute(probe, tmp_path, waveform, len(expected))
     assert result.returncode == 0, result.stderr.decode()
@@ -59,8 +77,9 @@ def test_silence_is_finite_zero_without_padding(probe, tmp_path):
     np.testing.assert_array_equal(np.frombuffer(result.stdout, np.float32), np.zeros(12800))
 
 
-@pytest.mark.parametrize("samples,maximum", [(np.zeros(319), 100), (np.zeros(16000), 99),
-                                                (np.full(1600, np.nan), 100)])
+@pytest.mark.parametrize(
+    "samples,maximum", [(np.zeros(319), 100), (np.zeros(16000), 99), (np.full(1600, np.nan), 100)]
+)
 def test_invalid_audio_is_rejected_not_truncated(probe, tmp_path, samples, maximum):
     result = execute(probe, tmp_path, samples, maximum)
     assert result.returncode != 0

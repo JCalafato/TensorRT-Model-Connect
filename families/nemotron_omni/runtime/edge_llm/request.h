@@ -99,7 +99,8 @@ make_request(Span<const ImageVideoTextMessage> messages, const TextGenerationCon
         throw std::invalid_argument(
             "Nemotron Omni requires a prompt and room for the output budget");
     if (!cfg.use_chat_template && (messages.size() != 1 || !cfg.system_prompt.empty()))
-        throw std::invalid_argument("Nemotron Omni multi-message prompts require the chat template");
+        throw std::invalid_argument(
+            "Nemotron Omni multi-message prompts require the chat template");
     trt_edgellm::rt::LLMGenerationRequest result{};
     result.requests.resize(1);
     auto& request = result.requests.front();

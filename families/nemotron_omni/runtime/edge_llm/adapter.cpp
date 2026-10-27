@@ -41,16 +41,7 @@ void validate_target(const nlohmann::json& target) {
     utsname host{};
     if (uname(&host) != 0)
         throw std::runtime_error("Cannot identify Nemotron Omni Edge runtime host");
-    std::ifstream release("/etc/os-release");
-    std::string line, os_version;
-    while (std::getline(release, line)) {
-        if (line.rfind("VERSION_ID=", 0) == 0) {
-            os_version = line.substr(11);
-            if (os_version.size() >= 2 && os_version.front() == char(34) &&
-                os_version.back() == char(34))
-                os_version = os_version.substr(1, os_version.size() - 2);
-        }
-    }
+    const auto os_version = runtime_os_version(host.release);
     int device = 0, cuda_version = 0;
     check_cuda(cudaGetDevice(&device));
     check_cuda(cudaRuntimeGetVersion(&cuda_version));
@@ -74,11 +65,16 @@ class Artifacts {
   public:
     explicit Artifacts(const BundleReader& bundle, const nlohmann::json& marker) {
         std::set<std::string> names;
+        std::uintmax_t required_bytes = 0;
         for (const auto& entry : marker.at("artifacts")) {
             const auto name = entry.get<std::string>();
             if (!safe_artifact_path(name) || !names.insert(name).second ||
                 !bundle.find_section(name))
                 throw std::runtime_error("Invalid Nemotron Omni Edge artifact: " + name);
+            const auto size = bundle.find_section(name)->length;
+            if (size > std::numeric_limits<std::uintmax_t>::max() - required_bytes)
+                throw std::runtime_error("Nemotron Omni Edge artifact size overflow");
+            required_bytes += size;
         }
         for (const auto* required :
              {"edge_llm/engine/visual/visual.engine", "edge_llm/engine/visual/config.json",
@@ -89,8 +85,9 @@ class Artifacts {
             if (!names.count(required) || bundle.find_section(required)->length == 0)
                 throw std::runtime_error(
                     std::string("Required Nemotron Omni Edge artifact missing: ") + required);
-        std::string pattern =
-            (fs::temp_directory_path() / "trtmc-nemotron_omni-edge-XXXXXX").string();
+        const auto temporary_root = fs::temp_directory_path();
+        require_artifact_space(required_bytes, fs::space(temporary_root).available);
+        std::string pattern = (temporary_root / "trtmc-nemotron_omni-edge-XXXXXX").string();
         if (!mkdtemp(pattern.data()))
             throw std::runtime_error("Cannot create Nemotron Omni Edge artifact directory");
         root_ = pattern;

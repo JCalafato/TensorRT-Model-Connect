@@ -111,7 +111,6 @@ def builder_python(package: dict, target: dict) -> str:
     return interpreter
 
 
-
 def prepare(request, target: dict, staging: Path, log_path: Path, capacity: int):
     """Build the text/image components through the official Edge entry point.
 
@@ -128,9 +127,13 @@ def prepare(request, target: dict, staging: Path, log_path: Path, capacity: int)
     checkpoint_files = {}
     for name in sorted(set(mapping.values())):
         relative = Path(name)
-        if (relative.is_absolute() or relative.as_posix() != name
-                or any(p in {".", ".."} for p in relative.parts)
-                or "\\" in name or "\0" in name):
+        if (
+            relative.is_absolute()
+            or relative.as_posix() != name
+            or any(p in {".", ".."} for p in relative.parts)
+            or "\\" in name
+            or "\0" in name
+        ):
             raise ValueError("Nemotron Omni checkpoint shard path is not normalized")
         # HF snapshots normally link indexed shards to the adjacent blobs cache.
         # Validate the bundle-relative name, not the source symlink destination.
@@ -139,23 +142,48 @@ def prepare(request, target: dict, staging: Path, log_path: Path, capacity: int)
             raise ValueError("Omni checkpoint shard must be an existing file")
         checkpoint_files[f"edge_llm/checkpoint/{name}"] = path
     # Do not publish unrelated user notes or download/provenance sidecars.
-    for name in ("config.json", "generation_config.json", "hf_quant_config.json",
-                 "model.safetensors.index.json", "preprocessor_config.json",
-                 "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json",
-                 "chat_template.jinja"):
+    for name in (
+        "config.json",
+        "generation_config.json",
+        "hf_quant_config.json",
+        "model.safetensors.index.json",
+        "preprocessor_config.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "chat_template.jinja",
+    ):
         path = source / name
         if path.is_file():
             checkpoint_files[f"edge_llm/checkpoint/{name}"] = path
     engine = staging / "edge_llm/engine"
     command = [
-        builder_python(package, target), "-I", "-c",
+        builder_python(package, target),
+        "-I",
+        "-c",
         "from experimental.builder.cli import main; main()",
-        "--model-dir", str(source), "--engine-dir", str(engine),
-        "--components", "llm,visual", "--plugin-path", package["plugin"],
-        "--dense", "auto", "--max-input-len", str(capacity),
-        "--max-kv-cache-capacity", str(capacity), "--max-batch-size", "1",
-        "--min-image-tokens", "4", "--max-image-tokens", str(capacity),
-        "--max-image-tokens-per-image", str(capacity),
+        "--model-dir",
+        str(source),
+        "--engine-dir",
+        str(engine),
+        "--components",
+        "llm,visual",
+        "--plugin-path",
+        package["plugin"],
+        "--dense",
+        "auto",
+        "--max-input-len",
+        str(capacity),
+        "--max-kv-cache-capacity",
+        str(capacity),
+        "--max-batch-size",
+        "1",
+        "--min-image-tokens",
+        "4",
+        "--max-image-tokens",
+        str(capacity),
+        "--max-image-tokens-per-image",
+        str(capacity),
     ]
     if request.verbose:
         command.append("--verbose")
@@ -163,8 +191,15 @@ def prepare(request, target: dict, staging: Path, log_path: Path, capacity: int)
         log.write(shlex.join(command) + "\n")
         log.flush()
         subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, cwd=staging)
-    for name in ("llm.engine", "config.json", "tokenizer.json", "tokenizer_config.json",
-                 "chat_template.jinja", "visual/visual.engine", "visual/config.json"):
+    for name in (
+        "llm.engine",
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "chat_template.jinja",
+        "visual/visual.engine",
+        "visual/config.json",
+    ):
         path = engine / name
         if not path.is_file() or not path.stat().st_size:
             raise ValueError(f"Edge builder did not produce required artifact: {name}")
@@ -176,10 +211,15 @@ def prepare(request, target: dict, staging: Path, log_path: Path, capacity: int)
             files[path.relative_to(staging).as_posix()] = path
     files.update(checkpoint_files)
     return files, {
-        "version": 1, "edge_revision": EDGE_REVISION, "target": target,
-        "precision": "fp16", "execution_variant": "autoregressive",
-        "max_sequence_length": capacity, "max_input_length": capacity,
-        "max_batch_size": 1, "artifacts": list(files),
+        "version": 1,
+        "edge_revision": EDGE_REVISION,
+        "target": target,
+        "precision": "fp16",
+        "execution_variant": "autoregressive",
+        "max_sequence_length": capacity,
+        "max_input_length": capacity,
+        "max_batch_size": 1,
+        "artifacts": list(files),
     }
 
 

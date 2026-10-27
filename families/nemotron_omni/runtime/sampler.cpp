@@ -24,7 +24,7 @@ namespace trtmc {
 
 // Host argmax uses the first maximum, matching deterministic greedy decoding.
 static NemotronOmniSampleResult argmax_over_logits(const float* logits, int32_t vocab_size,
-                                                  int32_t eos_token_id) {
+                                                   int32_t eos_token_id) {
     NemotronOmniSampleResult result;
     const float* best = logits;
     for (int32_t i = 1; i < vocab_size; ++i) {
@@ -169,7 +169,7 @@ static FilteredDistribution build_filtered_distribution(const float* logits, int
 class GreedySampler final : public NemotronOmniISampler {
   public:
     NemotronOmniSampleResult sample(const float* logits, int32_t vocab_size,
-                                   const NemotronOmniSamplingParams& params) override {
+                                    const NemotronOmniSamplingParams& params) override {
         if (vocab_size <= 0 || logits == nullptr) {
             NemotronOmniSampleResult result;
             result.token_id = 0;
@@ -193,7 +193,7 @@ class TopKSampler final : public NemotronOmniISampler {
           initial_seed_(initial_seed == 0 ? 1 : initial_seed) {}
 
     NemotronOmniSampleResult sample(const float* logits, int32_t vocab_size,
-                                   const NemotronOmniSamplingParams& params) override {
+                                    const NemotronOmniSamplingParams& params) override {
         NemotronOmniSampleResult result;
 
         if (vocab_size <= 0 || logits == nullptr) {
@@ -240,8 +240,8 @@ class TopKSampler final : public NemotronOmniISampler {
 // Factory
 // ─────────────────────────────────────────────────────────────
 
-NemotronOmniSamplingParams nemotron_omni_sampling_params_from_config(const TextGenerationConfig& cfg,
-                                                                   int32_t default_eos) {
+NemotronOmniSamplingParams
+nemotron_omni_sampling_params_from_config(const TextGenerationConfig& cfg, int32_t default_eos) {
     NemotronOmniSamplingParams p;
     p.temperature = cfg.temperature;
     p.top_k = cfg.top_k;

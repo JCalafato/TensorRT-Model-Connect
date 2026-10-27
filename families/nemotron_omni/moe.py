@@ -53,7 +53,13 @@ def add_moe_layer(network, hidden, eps_tensor, *, weights, prefix, raw, dtype, q
     if router_input.dtype != trt.float32:
         router_input = network.add_cast(router_input, trt.float32).get_output(0)
     logits = graph_ops.add_matmul_rhs_constant(
-        network, router_input, hidden_size, experts, weights[f"{prefix}.router"], dtype=np.float32, rank=2
+        network,
+        router_input,
+        hidden_size,
+        experts,
+        weights[f"{prefix}.router"],
+        dtype=np.float32,
+        rank=2,
     )
     scores = network.add_activation(logits, trt.ActivationType.SIGMOID).get_output(0)
     choice = binary(
@@ -64,7 +70,9 @@ def add_moe_layer(network, hidden, eps_tensor, *, weights, prefix, raw, dtype, q
     if selected_groups != groups:
         per_group = experts // groups
         if per_group < 2:
-            raise ValueError("Nemotron Omni grouped routing requires at least two experts per group")
+            raise ValueError(
+                "Nemotron Omni grouped routing requires at least two experts per group"
+            )
         grouped = reshape(choice, (groups, per_group))
         best_two = network.add_topk(grouped, trt.TopKOperation.MAX, 2, 1 << 1).get_output(0)
         group_scores = network.add_reduce(

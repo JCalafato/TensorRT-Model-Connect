@@ -1,5 +1,7 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "audio_frontend.h"
 
@@ -23,9 +25,11 @@ constexpr double kPi = 3.14159265358979323846;
 void fft(std::array<std::complex<double>, kFft>& x) {
     for (int i = 1, j = 0; i < kFft; ++i) {
         int bit = kFft >> 1;
-        for (; j & bit; bit >>= 1) j ^= bit;
+        for (; j & bit; bit >>= 1)
+            j ^= bit;
         j ^= bit;
-        if (i < j) std::swap(x[i], x[j]);
+        if (i < j)
+            std::swap(x[i], x[j]);
     }
     for (int length = 2; length <= kFft; length <<= 1) {
         const auto step = std::polar(1.0, -2.0 * kPi / length);
@@ -43,24 +47,26 @@ void fft(std::array<std::complex<double>, kFft>& x) {
 }
 } // namespace
 
-AudioFeatures audio_features(const std::vector<float>& samples,
-                             const std::vector<float>& filters,
+AudioFeatures audio_features(const std::vector<float>& samples, const std::vector<float>& filters,
                              std::size_t max_frames) {
     const auto frames = samples.size() / kHop;
     if (frames < 2 || frames > max_frames ||
         samples.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        throw std::invalid_argument("Omni audio requires at least 20 ms within the configured capacity");
+        throw std::invalid_argument(
+            "Omni audio requires at least 20 ms within the configured capacity");
     }
     if (filters.size() != kMel * kBins ||
-        !std::all_of(filters.begin(), filters.end(), [](float x) { return std::isfinite(x) && x >= 0; }) ||
+        !std::all_of(filters.begin(), filters.end(),
+                     [](float x) { return std::isfinite(x) && x >= 0; }) ||
         !std::all_of(samples.begin(), samples.end(), [](float x) { return std::isfinite(x); })) {
-        throw std::invalid_argument("Omni audio requires finite PCM and a complete nonnegative mel bank");
+        throw std::invalid_argument(
+            "Omni audio requires finite PCM and a complete nonnegative mel bank");
     }
     std::array<float, kFft> window{};
     for (int i = 0; i < kWindow; ++i) {
         window[(kFft - kWindow) / 2 + i] =
             0.5F * (1.0F - std::cos(static_cast<float>(i) *
-                                  static_cast<float>(2.0 * kPi / (kWindow - 1))));
+                                    static_cast<float>(2.0 * kPi / (kWindow - 1))));
     }
     AudioFeatures result{std::vector<float>(frames * kMel), frames};
     for (std::size_t frame = 0; frame < frames; ++frame) {
@@ -70,22 +76,26 @@ AudioFeatures audio_features(const std::vector<float>& samples,
             float sample = 0;
             if (source >= 0 && source < static_cast<long long>(samples.size())) {
                 sample = samples[static_cast<std::size_t>(source)];
-                if (source > 0) sample -= 0.97F * samples[static_cast<std::size_t>(source - 1)];
+                if (source > 0)
+                    sample -= 0.97F * samples[static_cast<std::size_t>(source - 1)];
             }
             spectrum[i] = static_cast<double>(sample * window[i]);
         }
         fft(spectrum);
         std::array<float, kBins> power{};
-        for (int i = 0; i < kBins; ++i) power[i] = static_cast<float>(std::norm(spectrum[i]));
+        for (int i = 0; i < kBins; ++i)
+            power[i] = static_cast<float>(std::norm(spectrum[i]));
         for (int mel = 0; mel < kMel; ++mel) {
             float sum = 0;
-            for (int i = 0; i < kBins; ++i) sum += filters[mel * kBins + i] * power[i];
+            for (int i = 0; i < kBins; ++i)
+                sum += filters[mel * kBins + i] * power[i];
             result.values[frame * kMel + mel] = std::log(sum + 5.960464477539063e-08F);
         }
     }
     for (int mel = 0; mel < kMel; ++mel) {
         double mean = 0;
-        for (std::size_t t = 0; t < frames; ++t) mean += result.values[t * kMel + mel];
+        for (std::size_t t = 0; t < frames; ++t)
+            mean += result.values[t * kMel + mel];
         mean /= static_cast<double>(frames);
         double variance = 0;
         for (std::size_t t = 0; t < frames; ++t) {
@@ -102,8 +112,8 @@ AudioFeatures audio_features(const std::vector<float>& samples,
 }
 
 AudioPositions audio_positions(int tokens, int hidden, int heads) {
-    if (tokens < 1 || tokens > 8192 || hidden < 2 || hidden % 2 || heads < 1 ||
-        hidden > 16384 || heads > 256 || hidden % heads) {
+    if (tokens < 1 || tokens > 8192 || hidden < 2 || hidden % 2 || heads < 1 || hidden > 16384 ||
+        heads > 256 || hidden % heads) {
         throw std::invalid_argument("Invalid Omni acoustic position dimensions");
     }
     AudioPositions result;

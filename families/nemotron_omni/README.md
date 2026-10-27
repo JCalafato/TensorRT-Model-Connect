@@ -32,7 +32,12 @@ encoder and acoustic encoder engines. Graph construction uses TensorRT Python;
 inference and preprocessing use the Model Connect C++ runtime, without ONNX or
 custom GPU kernels. The Edge bundle contains the official language/visual
 engines and their external checkpoint weights, so the original checkpoint
-directory is not needed after publication.
+directory is not needed after publication. At runtime, Edge extracts these files
+into a temporary directory and removes it after the model is destroyed. Set
+`TMPDIR` to a disk-backed directory with space for the bundled engines and
+checkpoint (about 24 GB for the exercised bundle), in addition to the bundle
+itself. The adapter checks available space before extraction; avoid a small
+RAM-backed `/tmp`.
 
 ## Modalities and execution
 
@@ -109,7 +114,8 @@ declared premerge case, alongside the small native component tests:
 
 ```sh
 PYTHONPATH=core/builder:apps/benchmark:. python -m pytest \
-  families/nemotron_omni/tests --e2e-model nemotron_omni -q
+  families/nemotron_omni/tests --e2e-model nemotron_omni \
+  --e2e-testcase nemotron-omni-nvfp4-native -q
 ```
 
 Set `TRTMC_RUNTIME_ROOT` to the compiled native runtime containing the owning
@@ -127,5 +133,8 @@ PYTHONPATH=core/builder:apps/benchmark:. python -m \
   --model-dir /path/to/Nemotron-Omni --output /path/to/new-reference.json
 ```
 
-The replay command refuses to overwrite previous results and never updates the
-checked-in oracle automatically. Running it is not necessary for every test.
+The replay command writes a result only after every request succeeds, refuses
+to overwrite previous results, and never updates the checked-in oracle
+automatically. It records the supplied local checkpoint path as unverified and
+reports the expected model/revision separately; a directory name is not proof
+of checkpoint identity. Running it is not necessary for every test.

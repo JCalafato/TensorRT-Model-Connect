@@ -270,5 +270,7 @@ def add_attention_block(
     attn_out = matmul(context, attention_size, hidden_size, weights[f"{prefix}.w_o"], f"{_lp}.w_o")
     o_bias = weights.get(f"{prefix}.o_bias")
     if o_bias is not None:
-        attn_out = graph_ops.add_bias_sum(network, attn_out, hidden_size, o_bias, dtype=dtype, rank=2)
+        attn_out = graph_ops.add_bias_sum(
+            network, attn_out, hidden_size, o_bias, dtype=dtype, rank=2
+        )
     return {"normed": normed, "attn_out": attn_out, "present_k": present_k, "present_v": present_v}

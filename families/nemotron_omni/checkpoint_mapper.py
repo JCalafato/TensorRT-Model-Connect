@@ -21,7 +21,9 @@ from safetensors import safe_open
 import ml_dtypes  # noqa: F401
 
 from .prepared_quantization import (
-    PreparedLinear, PreparedPolicy, checkpoint_policy,
+    PreparedLinear,
+    PreparedPolicy,
+    checkpoint_policy,
 )
 
 
@@ -108,7 +110,10 @@ class _ReaderCollection(list):
 
 
 def _open_safetensors(
-    model_dir: Path, *, prepared: bool = True, policy: PreparedPolicy | None = None,
+    model_dir: Path,
+    *,
+    prepared: bool = True,
+    policy: PreparedPolicy | None = None,
 ) -> _ReaderCollection:
     """Open the checkpoint's required NumPy safetensors readers."""
     import json
@@ -134,9 +139,7 @@ def _open_safetensors(
         if not isinstance(weight_map, dict) or not weight_map:
             raise ValueError("model.safetensors.index.json has no weight_map")
         shard_files = sorted(set(str(value) for value in weight_map.values()))
-        readers_by_file = {
-            shard: open_reader(model_dir / shard) for shard in shard_files
-        }
+        readers_by_file = {shard: open_reader(model_dir / shard) for shard in shard_files}
         return _ReaderCollection(
             [readers_by_file[shard] for shard in shard_files],
             tensor_map={
@@ -155,9 +158,7 @@ def _open_safetensors(
         if not isinstance(weight_map, dict) or not weight_map:
             raise ValueError("diffusion safetensors index has no weight_map")
         shard_files = sorted(set(str(value) for value in weight_map.values()))
-        readers_by_file = {
-            shard: open_reader(model_dir / shard) for shard in shard_files
-        }
+        readers_by_file = {shard: open_reader(model_dir / shard) for shard in shard_files}
         return _ReaderCollection(
             [readers_by_file[shard] for shard in shard_files],
             tensor_map={
@@ -182,24 +183,32 @@ def _load_tensor(readers: _ReaderCollection, name: str) -> np.ndarray:
     if reader is None:
         raise KeyError(f"Tensor not found: {name}")
     tensor = reader.get_tensor(name)
-    if name.endswith(".weight") and tensor.ndim == 2 and (
-        tensor.dtype in (np.dtype(ml_dtypes.float8_e4m3fn), np.dtype(np.uint8))
-        or _has_tensor(readers, name.removesuffix(".weight") + ".weight_scale")
+    if (
+        name.endswith(".weight")
+        and tensor.ndim == 2
+        and (
+            tensor.dtype in (np.dtype(ml_dtypes.float8_e4m3fn), np.dtype(np.uint8))
+            or _has_tensor(readers, name.removesuffix(".weight") + ".weight_scale")
+        )
     ):
         policy = reader.policy
         format = policy.linear_format(name) if policy is not None else None
         if format is None:
             raise ValueError(f"{name}: packed weight has no matching prepared policy")
+
         def get_tensor(key):
             owner = readers.tensor_map.get(key)
             if owner is None:
                 raise KeyError(f"Tensor not found: {key}")
             return owner.get_tensor(key)
+
         return PreparedLinear.from_tensor(tensor, name, get_tensor, format)
     return _to_numpy_fp32(tensor)
 
 
-def _load_projection(readers, hf_key, name, quant_ctx, in_features, out_features, *, precision="fp32"):
+def _load_projection(
+    readers, hf_key, name, quant_ctx, in_features, out_features, *, precision="fp32"
+):
     """Keep packed source weights and their owning policy, never dequantize on CPU."""
     result = _transpose_2d(_load_tensor(readers, hf_key), name, precision=precision)
     if result.shape != (in_features, out_features):
@@ -222,8 +231,11 @@ class ComponentWeights(Mapping):
         return result
 
     def __iter__(self):
-        return (name for name in self.readers.tensor_map
-                if name.startswith(("vision_model.", "mlp1.", "sound_encoder.", "sound_projection.")))
+        return (
+            name
+            for name in self.readers.tensor_map
+            if name.startswith(("vision_model.", "mlp1.", "sound_encoder.", "sound_projection."))
+        )
 
     def __len__(self):
         return sum(1 for _ in self)

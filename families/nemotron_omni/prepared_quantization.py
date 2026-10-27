@@ -12,8 +12,6 @@ import ml_dtypes
 import numpy as np
 
 
-
-
 @dataclass(frozen=True)
 class PreparedPolicy:
     algorithm: str
@@ -37,7 +35,9 @@ class PreparedPolicy:
         return algorithm.lower()
 
 
-def checkpoint_policy(model_dir: Path, *, allow_legacy_producer: bool = False) -> PreparedPolicy | None:
+def checkpoint_policy(
+    model_dir: Path, *, allow_legacy_producer: bool = False
+) -> PreparedPolicy | None:
     path = model_dir / "config.json"
     raw = json.loads(path.read_text()) if path.is_file() else {}
     embedded = raw.get("quantization_config") or {}
@@ -50,7 +50,8 @@ def checkpoint_policy(model_dir: Path, *, allow_legacy_producer: bool = False) -
             raise ValueError("Nemotron Omni requires ModelOpt prepared quantization metadata")
         return None
     if embedded.get("quant_method", "modelopt") != "modelopt" or (
-        prepared and prepared.get("producer", {}).get("name") != "modelopt"
+        prepared
+        and prepared.get("producer", {}).get("name") != "modelopt"
         and not (allow_legacy_producer and "producer" not in prepared)
     ):
         raise ValueError("Nemotron Omni prepared weights require ModelOpt metadata")
@@ -162,9 +163,7 @@ class PreparedLinear:
             positive_scale(get_tensor(prefix + ".weight_scale_2"), name),
         )
 
-    def matmul(
-        self, network, activation, lhs_width, rhs_width
-    ):
+    def matmul(self, network, activation, lhs_width, rhs_width):
         import tensorrt as trt
 
         if not self.transposed or self.shape != (lhs_width, rhs_width):
@@ -186,9 +185,9 @@ class PreparedLinear:
             # Conditional expert outputs acquire their rank during graph build.
             # Construct rank-two Q/DQ first, then wire the real activation; the
             # temporary constant is disconnected from the completed network.
-            seed = constant(np.zeros(
-                (1, lhs_width), dtype=np.float16 if dtype == trt.float16 else np.float32
-            ))
+            seed = constant(
+                np.zeros((1, lhs_width), dtype=np.float16 if dtype == trt.float16 else np.float32)
+            )
             quantize = network.add_quantize(seed, scale, trt.DataType.FP8)
             lhs = network.add_dequantize(quantize.get_output(0), scale, dtype).get_output(0)
             quantize.set_input(0, activation)
@@ -212,9 +211,11 @@ class PreparedLinear:
                 # As with FP8 above, defer conditional-output binding until
                 # rank-sensitive Q/DQ construction is complete. The seed is
                 # disconnected; the source activation and scales are unchanged.
-                seed = constant(np.zeros(
-                    (1, lhs_width), dtype=np.float16 if dtype == trt.float16 else np.float32
-                ))
+                seed = constant(
+                    np.zeros(
+                        (1, lhs_width), dtype=np.float16 if dtype == trt.float16 else np.float32
+                    )
+                )
                 packed = network.add_dynamic_quantize(
                     seed, 1, 16, trt.DataType.FP4, trt.DataType.FP8
                 )

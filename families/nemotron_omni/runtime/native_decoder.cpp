@@ -1,7 +1,10 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "native_decoder.h"
+
 #include "trtmc/runtime/trt_backend.h"
 
 #include <algorithm>
@@ -15,13 +18,15 @@
 namespace trtmc::nemotron_omni {
 namespace {
 void checked(cudaError_t code) {
-    if (code != cudaSuccess) throw std::runtime_error(cudaGetErrorString(code));
+    if (code != cudaSuccess)
+        throw std::runtime_error(cudaGetErrorString(code));
 }
-}
+} // namespace
 
 NativeDecoder::NativeDecoder(const FamilyContext& context) {
     if (context.kv_cache_size_bytes != 0)
-        throw std::invalid_argument("Omni uses its built cache capacity, not a runtime byte override");
+        throw std::invalid_argument(
+            "Omni uses its built cache capacity, not a runtime byte override");
     const auto metadata = context.reader.read_section("runtime.json");
     const auto config = nlohmann::json::parse(metadata);
     if (config.at("format") != 1 ||
@@ -35,7 +40,8 @@ NativeDecoder::NativeDecoder(const FamilyContext& context) {
         throw std::invalid_argument("Invalid native Omni dimensions");
     const auto plan = context.reader.read_section("decoder.plan");
     module_ = context.backend.create_module(plan.data(), plan.size(), {});
-    if (!module_ || !module_->ok()) throw std::runtime_error("Cannot load Omni decoder engine");
+    if (!module_ || !module_->ok())
+        throw std::runtime_error("Cannot load Omni decoder engine");
     module_->set_timing_label("omni_decoder");
     dtype_ = module_->tensor_dtype("input_embedding");
     if ((dtype_ != DType::kFloat32 && dtype_ != DType::kFloat16) ||
@@ -44,18 +50,20 @@ NativeDecoder::NativeDecoder(const FamilyContext& context) {
         module_->tensor_dtype("logits") != DType::kFloat32)
         throw std::invalid_argument("Omni decoder tensors differ from bundle metadata");
     const auto& state = config.at("state");
-    auto add = [&](const std::string& input, const std::string& output,
-                   std::vector<int64_t> shape, bool append) {
+    auto add = [&](const std::string& input, const std::string& output, std::vector<int64_t> shape,
+                   bool append) {
         if (!module_->has_input(input) || !module_->has_output(output) ||
             module_->tensor_shape(input) != shape)
             throw std::invalid_argument("Invalid Omni decoder state: " + input);
         auto expected = shape;
-        if (append) expected.front() = 1;
+        if (append)
+            expected.front() = 1;
         const auto dtype = module_->tensor_dtype(input);
         if (module_->tensor_shape(output) != expected || module_->tensor_dtype(output) != dtype)
             throw std::invalid_argument("Invalid Omni decoder state output: " + output);
         states_.push_back({output, DeviceTensor(shape, dtype, module_->stream()), append});
-        if (!states_.back().storage.ok()) throw std::runtime_error("Cannot allocate Omni decoder state");
+        if (!states_.back().storage.ok())
+            throw std::runtime_error("Cannot allocate Omni decoder state");
         module_->bind_external(input, states_.back().storage.data());
     };
     for (int i = 0; i < state.at("num_mamba_layers").get<int>(); ++i) {
@@ -64,9 +72,11 @@ NativeDecoder::NativeDecoder(const FamilyContext& context) {
             {state.at("conv_dim").get<int>(), state.at("mamba_d_conv").get<int>()}, false);
         add("ssm_state" + suffix, "present_ssm" + suffix,
             {state.at("mamba_nheads").get<int>(), state.at("mamba_head_dim").get<int>(),
-             state.at("mamba_d_state").get<int>()}, false);
+             state.at("mamba_d_state").get<int>()},
+            false);
     }
-    const int kv = language.at("num_key_value_heads").get<int>() * language.at("head_dim").get<int>();
+    const int kv =
+        language.at("num_key_value_heads").get<int>() * language.at("head_dim").get<int>();
     for (int i = 0; i < state.at("num_attention_layers").get<int>(); ++i)
         for (const auto* kind : {"k", "v"}) {
             const auto suffix = std::string(kind) + "_" + std::to_string(i);
@@ -78,7 +88,8 @@ NativeDecoder::NativeDecoder(const FamilyContext& context) {
 void NativeDecoder::reset() {
     module_->reset_execution_context();
     for (auto& state : states_)
-        checked(cudaMemsetAsync(state.storage.data(), 0, state.storage.nbytes(), module_->stream()));
+        checked(
+            cudaMemsetAsync(state.storage.data(), 0, state.storage.nbytes(), module_->stream()));
     module_->sync();
     position_ = 0;
 }
@@ -109,14 +120,17 @@ std::vector<float> NativeDecoder::step(const std::vector<float>& embedding) {
         inputs.emplace("position_id", TensorMap::mapped_type{&position_, {1}, DType::kInt32});
     module_->forward_async(inputs);
     std::vector<float> logits(vocab_);
-    checked(cudaMemcpyAsync(logits.data(), module_->device_ptr("logits"), logits.size() * sizeof(float),
-                             cudaMemcpyDeviceToHost, module_->stream()));
+    checked(cudaMemcpyAsync(logits.data(), module_->device_ptr("logits"),
+                            logits.size() * sizeof(float), cudaMemcpyDeviceToHost,
+                            module_->stream()));
     for (auto& state : states_) {
-        const auto bytes = state.append ? state.storage.nbytes() / capacity_ : state.storage.nbytes();
+        const auto bytes =
+            state.append ? state.storage.nbytes() / capacity_ : state.storage.nbytes();
         auto* destination = static_cast<unsigned char*>(state.storage.data());
-        if (state.append) destination += static_cast<std::size_t>(position_) * bytes;
+        if (state.append)
+            destination += static_cast<std::size_t>(position_) * bytes;
         checked(cudaMemcpyAsync(destination, module_->device_ptr(state.output), bytes,
-                                 cudaMemcpyDeviceToDevice, module_->stream()));
+                                cudaMemcpyDeviceToDevice, module_->stream()));
     }
     module_->sync();
     if (!std::all_of(logits.begin(), logits.end(), [](float x) { return std::isfinite(x); }))

@@ -6,6 +6,7 @@
 All text and projected modality embeddings traverse this same hybrid network.
 Prepared mixed-precision weights and exported FP8 KV scales stay explicit.
 """
+
 from __future__ import annotations
 
 import sys
@@ -15,7 +16,14 @@ import numpy as np
 import tensorrt as trt
 
 from .config import DecoderConfig
-from .checkpoint_mapper import WeightDict, _open_safetensors, _load_tensor, _has_tensor, _transpose_2d, _load_projection
+from .checkpoint_mapper import (
+    WeightDict,
+    _open_safetensors,
+    _load_tensor,
+    _has_tensor,
+    _transpose_2d,
+    _load_projection,
+)
 from . import graph_ops, graph_blocks
 from .prepared_quantization import PreparedPolicy, PreparedQuantContext
 
@@ -39,7 +47,9 @@ def _config_layer_types(raw: dict, num_layers: int) -> list[str]:
     for field in ("layer_types", "layers_block_type"):
         if field in raw:
             kinds = raw[field]
-            if not isinstance(kinds, list) or any(k not in {"mamba", "mlp", "attention", "moe"} for k in kinds):
+            if not isinstance(kinds, list) or any(
+                k not in {"mamba", "mlp", "attention", "moe"} for k in kinds
+            ):
                 raise ValueError("Unsupported Nemotron Omni explicit layer type")
             forms.append(["mamba2" if k == "mamba" else k for k in kinds])
     if not forms:
@@ -111,7 +121,8 @@ class OmniDecoder:
         # Exported scale tensors, not broad checkpoint metadata, enable FP8 KV.
         fp8_kv_cache = any(
             _has_tensor(readers, f"language_model.backbone.layers.{i}.mixer.k_proj.k_scale")
-            for i, kind in enumerate(layer_types) if kind == "attention"
+            for i, kind in enumerate(layer_types)
+            if kind == "attention"
         )
         weights["_fp8_kv_cache"] = fp8_kv_cache
 
@@ -224,7 +235,9 @@ class OmniDecoder:
                 for expert in range(int(raw["n_routed_experts"])):
                     for projection in ("up", "down"):
                         weights[f"{prefix}.expert.{expert}.{projection}"] = _transpose_2d(
-                            _load_tensor(readers, f"{mixer}.experts.{expert}.{projection}_proj.weight"),
+                            _load_tensor(
+                                readers, f"{mixer}.experts.{expert}.{projection}_proj.weight"
+                            ),
                             f"expert.{expert}.{projection}",
                         )
                 for projection in ("up", "down"):
@@ -233,7 +246,10 @@ class OmniDecoder:
                         f"shared.{projection}",
                     )
                 if raw.get("moe_latent_size") is not None:
-                    for logical, source in (("latent_in", "fc1_latent_proj"), ("latent_out", "fc2_latent_proj")):
+                    for logical, source in (
+                        ("latent_in", "fc1_latent_proj"),
+                        ("latent_out", "fc2_latent_proj"),
+                    ):
                         weights[f"{prefix}.{logical}"] = _transpose_2d(
                             _load_tensor(readers, f"{mixer}.{source}.weight"), logical
                         )
@@ -289,7 +305,11 @@ class OmniDecoder:
                     scales = []
                     for projection in ("q", "k", "v"):
                         key = f"{hf_prefix}.mixer.{projection}_proj.{projection}_scale"
-                        value = np.asarray(_load_tensor(readers, key)) if _has_tensor(readers, key) else np.array(1.0)
+                        value = (
+                            np.asarray(_load_tensor(readers, key))
+                            if _has_tensor(readers, key)
+                            else np.array(1.0)
+                        )
                         if value.size != 1 or not np.isfinite(value).all() or (value <= 0).any():
                             raise ValueError(f"Invalid Nemotron Omni FP8 attention scale: {key}")
                         scales.append(float(value.item()))
@@ -513,8 +533,14 @@ class OmniDecoder:
                 from .moe import add_moe_layer
 
                 hidden_state = add_moe_layer(
-                    network, layer_hidden, layer_eps, weights=weights, prefix=prefix,
-                    raw=config.raw, dtype=layer_np_dtype, quant_ctx=quant_ctx,
+                    network,
+                    layer_hidden,
+                    layer_eps,
+                    weights=weights,
+                    prefix=prefix,
+                    raw=config.raw,
+                    dtype=layer_np_dtype,
+                    quant_ctx=quant_ctx,
                 )
 
             elif lt == "attention":
@@ -759,7 +785,12 @@ def _add_mamba2_layer(
     conv_flat = network.add_shuffle(conv_sum.get_output(0))
     conv_flat.reshape_dims = (1, conv_dim)
     conv_out = graph_ops.add_bias_sum(
-        network, conv_flat.get_output(0), conv_dim, weights[f"{prefix}.conv1d_bias"], dtype=dtype, rank=2
+        network,
+        conv_flat.get_output(0),
+        conv_dim,
+        weights[f"{prefix}.conv1d_bias"],
+        dtype=dtype,
+        rank=2,
     )
     hbc_activated = graph_ops.add_activation(network, conv_out, "silu", dtype=dtype)
 

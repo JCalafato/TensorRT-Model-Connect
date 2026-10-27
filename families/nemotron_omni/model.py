@@ -13,17 +13,23 @@ def build(request, writer):
     """Build the full checkpoint, never a text-only substitute for Omni."""
     if request.task not in SUPPORTED_TASKS:
         raise ValueError("Nemotron Omni requires a supported text or multimodal reasoning task")
-    if (request.backend != "trt" or request.precision not in {"fp16", "fp32"}):
+    if request.backend != "trt" or request.precision not in {"fp16", "fp32"}:
         raise ValueError("Omni requires TensorRT with fp16 or fp32 computation")
     if request.dynamic_kv_cache:
         raise NotImplementedError("nemotron_omni does not support dynamic_kv_cache")
-    if (request.max_batch_size != 1 or request.tensor_parallel_size != 1
-            or request.context_parallel_size != 1
-            or request.fp32_layers or request.graph_transform is not None
-            or request.mtp_seq_len is not None):
+    if (
+        request.max_batch_size != 1
+        or request.tensor_parallel_size != 1
+        or request.context_parallel_size != 1
+        or request.fp32_layers
+        or request.graph_transform is not None
+        or request.mtp_seq_len is not None
+    ):
         raise ValueError("Omni implements one non-speculative request on one TensorRT device")
-    if any(value is not None for value in (request.image_height, request.image_width,
-                                          request.video_num_frames)):
+    if any(
+        value is not None
+        for value in (request.image_height, request.image_width, request.video_num_frames)
+    ):
         raise ValueError("Omni media shapes are dynamic, not fixed generic dimensions")
     if request.quantization not in {None, "none", "nvfp4"}:
         raise ValueError("Omni preserves the documented prepared NVFP4/FP8 weights")
@@ -38,9 +44,11 @@ def build(request, writer):
         raise ValueError("Omni decoder capacity must be within the checkpoint context limit")
     maximum = config.vision["args"]["max_num_patches"]
     patches = min(maximum, max(1024, capacity * 4))
+
     def native(request, writer):
         writer.set_header(family="nemotron_omni", task=request.task, backend=request.backend)
         build_native(request, writer, max_visual_patches=patches, verbose=request.verbose)
 
     from .edge_llm import dispatch
+
     dispatch.build(request, writer, native, capacity)

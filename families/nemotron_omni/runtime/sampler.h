@@ -39,7 +39,7 @@ class NemotronOmniISampler {
     /// vocab_size: number of logit values.
     /// params: sampling parameters for this step.
     virtual NemotronOmniSampleResult sample(const float* logits, int32_t vocab_size,
-                                           const NemotronOmniSamplingParams& params) = 0;
+                                            const NemotronOmniSamplingParams& params) = 0;
     /// Reset sampler state (e.g., RNG state between sequences).
     virtual void reset() {}
 };
@@ -48,8 +48,9 @@ class NemotronOmniISampler {
 /// Forward-declared here; defined in sampler.cpp alongside the factory.
 struct TextGenerationConfig; // defined in trtmc/task.h
 
-NemotronOmniSamplingParams nemotron_omni_sampling_params_from_config(const TextGenerationConfig& cfg,
-                                                                   int32_t default_eos = -1);
+NemotronOmniSamplingParams
+nemotron_omni_sampling_params_from_config(const TextGenerationConfig& cfg,
+                                          int32_t default_eos = -1);
 
 /// Create the exact host sampler selected by the request.
 std::unique_ptr<NemotronOmniISampler>

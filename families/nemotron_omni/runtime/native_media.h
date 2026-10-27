@@ -1,9 +1,12 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 #include "trtmc/runtime/family_factory.h"
 #include "trtmc/runtime/trt_module.h"
+
 #include <memory>
 #include <vector>
 
@@ -19,6 +22,7 @@ class NativeMedia {
     int patch() const noexcept { return patch_; }
     int max_patches() const noexcept { return max_patches_; }
     int max_audio_frames() const noexcept { return max_audio_frames_; }
+
   private:
     std::unique_ptr<ITrtModule> image_patch_, video_patch_, visual_, audio_;
     std::vector<float> positions_, mel_filters_;
