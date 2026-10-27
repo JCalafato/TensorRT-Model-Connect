@@ -4,6 +4,7 @@
 """Reasoner checkpoint identity, validation, and indexed BF16 weight loading."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -127,5 +128,80 @@ def test_arbitrary_external_shard_link_is_rejected(tmp_path):
     (root / "model.safetensors.index.json").write_text(json.dumps({
         "weight_map": {"norm.weight": "part.safetensors"},
     }))
+    with pytest.raises(ValueError, match="non-contained"):
+        CheckpointWeights(root)
+
+
+def _shared_cache(tmp_path):
+    torch = pytest.importorskip("torch")
+    from safetensors.torch import save_file
+
+    cache = tmp_path / "hub"
+    repo = cache / "models--example--reasoner"
+    root = repo / "snapshots" / ("a" * 40)
+    (root / "transformer").mkdir(parents=True)
+    store = cache / "blobs"
+    digest = "ab" * 32
+    target = store / digest[:2] / digest
+    target.parent.mkdir(parents=True)
+    (store / ".huggingface-shared-blobs").write_text("1\n")
+    save_file({"norm.weight": torch.ones(2)}, target)
+    blob = repo / "blobs" / ("cd" * 32)
+    blob.parent.mkdir()
+    blob.symlink_to(Path("../../blobs") / digest[:2] / digest)
+    shard = root / "transformer/part.safetensors"
+    shard.symlink_to(Path("../../../blobs") / blob.name)
+    (root / "model.safetensors.index.json").write_text(json.dumps({
+        "weight_map": {"norm.weight": "transformer/part.safetensors"},
+    }))
+    return root, shard, blob, target
+
+
+def test_hf_shared_cache_shard_links_are_read_without_copying(tmp_path):
+    root, shard, blob, target = _shared_cache(tmp_path)
+    original = target.stat()
+    np.testing.assert_array_equal(CheckpointWeights(root)["norm.weight"], np.ones(2))
+    assert shard.is_symlink() and blob.is_symlink()
+    assert target.stat().st_ino == original.st_ino
+    assert target.stat().st_size == original.st_size
+
+
+@pytest.mark.parametrize("mutation", [
+    "missing_marker", "unsupported_version", "marker_symlink", "payload_symlink",
+    "prefix_symlink", "direct_shared_link", "other_repository", "invalid_hash",
+])
+def test_shared_cache_validation_does_not_allow_external_links(tmp_path, mutation):
+    root, shard, blob, target = _shared_cache(tmp_path)
+    marker = target.parent.parent / ".huggingface-shared-blobs"
+    if mutation == "missing_marker":
+        marker.unlink()
+    elif mutation == "unsupported_version":
+        marker.write_text("2\n")
+    elif mutation == "marker_symlink":
+        outside = tmp_path / "marker"
+        marker.rename(outside)
+        marker.symlink_to(outside)
+    elif mutation == "payload_symlink":
+        outside = tmp_path / "outside.safetensors"
+        target.rename(outside)
+        target.symlink_to(outside)
+    elif mutation == "prefix_symlink":
+        outside = tmp_path / "outside-directory"
+        target.parent.rename(outside)
+        target.parent.symlink_to(outside, target_is_directory=True)
+    elif mutation == "direct_shared_link":
+        shard.unlink()
+        shard.symlink_to(target)
+    elif mutation == "other_repository":
+        other = blob.parent.parent.parent / "models--other--repository/blobs" / blob.name
+        other.parent.mkdir(parents=True)
+        blob.rename(other)
+        shard.unlink()
+        shard.symlink_to(other)
+    elif mutation == "invalid_hash":
+        invalid = target.with_name("not-a-content-hash")
+        target.rename(invalid)
+        blob.unlink()
+        blob.symlink_to(invalid)
     with pytest.raises(ValueError, match="non-contained"):
         CheckpointWeights(root)
