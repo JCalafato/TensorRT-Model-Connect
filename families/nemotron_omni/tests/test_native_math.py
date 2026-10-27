@@ -307,9 +307,14 @@ def test_cpp_hybrid_state_progression_reset_and_capacity(tmp_path):
     import subprocess
 
     _torch()
+    from pathlib import Path
+    from .test_e2e import _runner
+
     probe = os.environ.get("TRTMC_OMNI_DECODER_PROBE")
     if not probe:
-        pytest.skip("Build the owning C++ decoder probe to validate the MC runtime")
+        probe = _runner(
+            Path(os.environ.get("TRTMC_RUNTIME_ROOT", ".")), "nemotron_omni_decoder_probe"
+        )
     from safetensors.numpy import save_file
     from tensorrt_model_connect.bundle_writer import BundleWriter
     from families.nemotron_omni.config import DecoderConfig

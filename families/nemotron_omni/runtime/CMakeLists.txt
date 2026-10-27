@@ -20,5 +20,11 @@ include("${CMAKE_CURRENT_LIST_DIR}/edge_llm/Adapter.cmake")
 if(TRTMC_BUILD_TESTS)
   add_executable(nemotron_omni_inference_test ../tests/cpp/run_model.cpp)
   target_link_libraries(nemotron_omni_inference_test PRIVATE trtmc_c nlohmann_json::nlohmann_json)
-  add_dependencies(trtmc_model_nemotron_omni nemotron_omni_inference_test)
+  add_executable(nemotron_omni_decoder_probe
+    ../tests/cpp/decoder_probe.cpp native_decoder.cpp)
+  target_include_directories(nemotron_omni_decoder_probe PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+  target_link_libraries(nemotron_omni_decoder_probe PRIVATE
+    trtmc_core trtmc_backend_trt nlohmann_json::nlohmann_json)
+  add_dependencies(trtmc_model_nemotron_omni
+    nemotron_omni_inference_test nemotron_omni_decoder_probe)
 endif()

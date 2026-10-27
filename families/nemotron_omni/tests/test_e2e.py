@@ -161,7 +161,7 @@ def _ned(a, b):
     return row[-1] / max(len(a), len(b), 1)
 
 
-def _runner(runtime):
+def _runner(runtime, target="nemotron_omni_inference_test"):
     roots = [runtime]
     configured = os.environ.get("TRTMC_NATIVE_BUILD_DIR")
     if configured:
@@ -175,9 +175,7 @@ def _runner(runtime):
     for root in roots:
         for prefix in (root, root / "families/nemotron_omni"):
             for configuration in ("", "Release", "Debug"):
-                candidates.append(
-                    prefix / configuration / ("nemotron_omni_inference_test" + suffix)
-                )
+                candidates.append(prefix / configuration / (target + suffix))
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -190,7 +188,7 @@ def _runner(runtime):
                 "--build",
                 configured,
                 "--target",
-                "nemotron_omni_inference_test",
+                target,
                 "--config",
                 "Release",
                 "--parallel",
@@ -201,18 +199,17 @@ def _runner(runtime):
         for candidate in candidates:
             if candidate.is_file():
                 return candidate
-    raise AssertionError("build the owning nemotron_omni_inference_test CMake target")
+    raise AssertionError(f"build the owning {target} CMake target")
 
 
-def test_runner_builds_missing_declared_helper(tmp_path, monkeypatch):
+@pytest.mark.parametrize("target", ["nemotron_omni_inference_test", "nemotron_omni_decoder_probe"])
+def test_runner_builds_missing_declared_helper(tmp_path, monkeypatch, target):
     native = tmp_path / "native"
     native.mkdir()
     (native / "CMakeCache.txt").touch()
     monkeypatch.setenv("TRTMC_NATIVE_BUILD_DIR", str(native))
     suffix = ".exe" if os.name == "nt" else ""
-    executable = (
-        native / "families/nemotron_omni/Release" / ("nemotron_omni_inference_test" + suffix)
-    )
+    executable = native / "families/nemotron_omni/Release" / (target + suffix)
     calls = []
 
     def build_driver(command, *, check):
@@ -222,7 +219,7 @@ def test_runner_builds_missing_declared_helper(tmp_path, monkeypatch):
             "--build",
             str(native),
             "--target",
-            "nemotron_omni_inference_test",
+            target,
             "--config",
             "Release",
             "--parallel",
@@ -233,16 +230,17 @@ def test_runner_builds_missing_declared_helper(tmp_path, monkeypatch):
         executable.touch()
 
     monkeypatch.setattr(subprocess, "run", build_driver)
-    assert _runner(tmp_path / "wheel") == executable
-    assert _runner(tmp_path / "wheel") == executable
+    assert _runner(tmp_path / "wheel", target) == executable
+    assert _runner(tmp_path / "wheel", target) == executable
     assert len(calls) == 1
 
 
-def test_runner_does_not_configure_an_undeclared_tree(tmp_path, monkeypatch):
+@pytest.mark.parametrize("target", ["nemotron_omni_inference_test", "nemotron_omni_decoder_probe"])
+def test_runner_does_not_configure_an_undeclared_tree(tmp_path, monkeypatch, target):
     monkeypatch.setenv("TRTMC_NATIVE_BUILD_DIR", str(tmp_path / "missing"))
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("unexpected build"))
     with pytest.raises(AssertionError, match="build the owning"):
-        _runner(tmp_path / "wheel")
+        _runner(tmp_path / "wheel", target)
 
 
 def test_reference_integrity():
