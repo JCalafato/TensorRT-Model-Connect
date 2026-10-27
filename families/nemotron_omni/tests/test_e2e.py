@@ -171,13 +171,78 @@ def _runner(runtime):
         if library.is_file():
             roots.append(library.resolve().parent)
     suffix = ".exe" if os.name == "nt" else ""
+    candidates = []
     for root in roots:
         for prefix in (root, root / "families/nemotron_omni"):
             for configuration in ("", "Release", "Debug"):
-                candidate = prefix / configuration / ("nemotron_omni_inference_test" + suffix)
-                if candidate.is_file():
-                    return candidate
+                candidates.append(
+                    prefix / configuration / ("nemotron_omni_inference_test" + suffix)
+                )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    # A wheel-backed run may have a configured test tree but no family DSO build.
+    # Build only this owning driver, never provision or reconfigure an environment.
+    if configured and (Path(configured) / "CMakeCache.txt").is_file():
+        subprocess.run(
+            [
+                "cmake",
+                "--build",
+                configured,
+                "--target",
+                "nemotron_omni_inference_test",
+                "--config",
+                "Release",
+                "--parallel",
+                "2",
+            ],
+            check=True,
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
     raise AssertionError("build the owning nemotron_omni_inference_test CMake target")
+
+
+def test_runner_builds_missing_declared_helper(tmp_path, monkeypatch):
+    native = tmp_path / "native"
+    native.mkdir()
+    (native / "CMakeCache.txt").touch()
+    monkeypatch.setenv("TRTMC_NATIVE_BUILD_DIR", str(native))
+    suffix = ".exe" if os.name == "nt" else ""
+    executable = (
+        native / "families/nemotron_omni/Release" / ("nemotron_omni_inference_test" + suffix)
+    )
+    calls = []
+
+    def build_driver(command, *, check):
+        assert check
+        assert command == [
+            "cmake",
+            "--build",
+            str(native),
+            "--target",
+            "nemotron_omni_inference_test",
+            "--config",
+            "Release",
+            "--parallel",
+            "2",
+        ]
+        calls.append(command)
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+
+    monkeypatch.setattr(subprocess, "run", build_driver)
+    assert _runner(tmp_path / "wheel") == executable
+    assert _runner(tmp_path / "wheel") == executable
+    assert len(calls) == 1
+
+
+def test_runner_does_not_configure_an_undeclared_tree(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRTMC_NATIVE_BUILD_DIR", str(tmp_path / "missing"))
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("unexpected build"))
+    with pytest.raises(AssertionError, match="build the owning"):
+        _runner(tmp_path / "wheel")
 
 
 def test_reference_integrity():
