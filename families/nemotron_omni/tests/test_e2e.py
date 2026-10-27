@@ -276,15 +276,27 @@ def test_reference_integrity(tmp_path, monkeypatch):
             assert row["text"] and 0 < len(row["token_ids"]) <= 96
 
 
+def _progress(capture, case_name, stage):
+    # The outer CI timeout can terminate pytest before captured output or JUnit
+    # is written. Keep the last entered stage visible without changing capture
+    # for model output, evidence, execution limits, or acceptance criteria.
+    with capture.disabled():
+        print(f"Nemotron Omni E2E [{case_name}]: {stage}", flush=True)
+
+
 @pytest.mark.parametrize("case_name", sorted(CASES))
-def test_e2e(case_name, request, tmp_path):
+def test_e2e(case_name, request, tmp_path, capfd):
     manifest, case = CASES[case_name]
     _selected(request.config, manifest, case)
     runtime = Path(os.environ["TRTMC_RUNTIME_ROOT"])
+    _progress(capfd, case_name, "native helper setup")
     runner = _runner(runtime)
+    _progress(capfd, case_name, "checkpoint acquisition")
     checkpoint = _checkpoint(manifest)
+    _progress(capfd, case_name, "fixture preparation")
     requests, expected = make_inputs(case["modalities"], tmp_path / "fixtures")
     bundle = tmp_path / manifest["bundle"]
+    _progress(capfd, case_name, "build started")
     with evidence_stage("build"):
         build(
             BuildRequest(
@@ -298,6 +310,7 @@ def test_e2e(case_name, request, tmp_path):
                 tensor_parallel_size=manifest["tensor_parallel_size"],
             )
         )
+    _progress(capfd, case_name, "build completed")
     source, destination = tmp_path / "input.json", tmp_path / "output.json"
     source.write_text(json.dumps(requests))
     command = [str(runner), str(bundle), str(runtime), str(source), str(destination)]
@@ -305,11 +318,13 @@ def test_e2e(case_name, request, tmp_path):
     library_path = "PATH" if os.name == "nt" else "LD_LIBRARY_PATH"
     env[library_path] = str(runtime) + os.pathsep + env.get(library_path, "")
     env["TMPDIR"] = str(tmp_path)
+    _progress(capfd, case_name, "native inference started")
     with evidence_stage("native"):
         completed = subprocess.run(command, env=env, text=True, capture_output=True, timeout=3600)
         record_evidence("commands", {"argv": command, "returncode": completed.returncode})
         record_evidence("native", {"stdout": completed.stdout, "stderr": completed.stderr})
         assert completed.returncode == 0, completed.stdout + completed.stderr
+    _progress(capfd, case_name, "native inference completed; accuracy validation started")
     actual = json.loads(destination.read_text())
     assert len(actual) == len(expected) == len(requests)
     threshold = json.loads((ROOT / "thresholds" / f"{case_name}.json").read_text())[
@@ -332,6 +347,7 @@ def test_e2e(case_name, request, tmp_path):
     )
     record_evidence("metrics", {"cases": results, "normalized_text_edit_distance_max": threshold})
     assert all(row["normalized_text_edit_distance"] <= threshold for row in results), results
+    _progress(capfd, case_name, "accuracy validation passed")
 
 
 @pytest.mark.parametrize("fail_second", [False, True])
