@@ -18,7 +18,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/edge_llm/Adapter.cmake")
 if(TRTMC_BUILD_TESTS)
   add_executable(cosmos3_edge_inference_test ../tests/cpp/run_model.cpp)
   target_link_libraries(cosmos3_edge_inference_test PRIVATE trtmc_c nlohmann_json::nlohmann_json)
-  # CI builds the owning family target, not every test executable in the tree.
+  # Preserve helper availability for direct family-target builds.
   add_dependencies(trtmc_model_cosmos3_edge cosmos3_edge_inference_test)
   target_include_directories(cosmos3_edge_inference_test PRIVATE ${PROJECT_SOURCE_DIR}/core/api/include)
   add_executable(test_cosmos3_edge_media
@@ -32,4 +32,7 @@ if(TRTMC_BUILD_TESTS)
     nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
   add_test(NAME test_cosmos3_edge_tokenizer COMMAND test_cosmos3_edge_tokenizer)
   add_dependencies(trtmc_model_cosmos3_edge test_cosmos3_edge_tokenizer)
+  # Wheel-backed E2E builds only the owning CTest targets, not the family DSO.
+  add_dependencies(test_cosmos3_edge_media cosmos3_edge_inference_test)
+  add_dependencies(test_cosmos3_edge_tokenizer cosmos3_edge_inference_test)
 endif()
