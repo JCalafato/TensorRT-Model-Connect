@@ -120,9 +120,10 @@ class OmniDecoder:
         weights = WeightDict()
         # Exported scale tensors, not broad checkpoint metadata, enable FP8 KV.
         fp8_kv_cache = any(
-            _has_tensor(readers, f"language_model.backbone.layers.{i}.mixer.k_proj.k_scale")
+            _has_tensor(readers, f"language_model.backbone.layers.{i}.mixer.{kv}_proj.{kv}_scale")
             for i, kind in enumerate(layer_types)
             if kind == "attention"
+            for kv in ("k", "v")
         )
         weights["_fp8_kv_cache"] = fp8_kv_cache
 
@@ -239,11 +240,13 @@ class OmniDecoder:
                                 readers, f"{mixer}.experts.{expert}.{projection}_proj.weight"
                             ),
                             f"expert.{expert}.{projection}",
+                            precision=projection_precision,
                         )
                 for projection in ("up", "down"):
                     weights[f"{prefix}.shared.{projection}"] = _transpose_2d(
                         _load_tensor(readers, f"{mixer}.shared_experts.{projection}_proj.weight"),
                         f"shared.{projection}",
+                        precision=projection_precision,
                     )
                 if raw.get("moe_latent_size") is not None:
                     for logical, source in (
@@ -251,7 +254,9 @@ class OmniDecoder:
                         ("latent_out", "fc2_latent_proj"),
                     ):
                         weights[f"{prefix}.{logical}"] = _transpose_2d(
-                            _load_tensor(readers, f"{mixer}.{source}.weight"), logical
+                            _load_tensor(readers, f"{mixer}.{source}.weight"),
+                            logical,
+                            precision=projection_precision,
                         )
 
             elif lt == "attention":
@@ -305,6 +310,8 @@ class OmniDecoder:
                     scales = []
                     for projection in ("q", "k", "v"):
                         key = f"{hf_prefix}.mixer.{projection}_proj.{projection}_scale"
+                        if projection != "q" and not _has_tensor(readers, key):
+                            raise ValueError(f"Missing Nemotron Omni FP8 attention scale: {key}")
                         value = (
                             np.asarray(_load_tensor(readers, key))
                             if _has_tensor(readers, key)
@@ -323,7 +330,11 @@ class OmniDecoder:
 
         # LM head
         lm_head_key = "language_model.lm_head.weight"
-        weights["w_lm_head"] = _transpose_2d(_load_tensor(readers, lm_head_key), "lm_head")
+        weights["w_lm_head"] = _transpose_2d(
+            _load_tensor(readers, lm_head_key),
+            "lm_head",
+            precision="fp32" if num_layers in fp32_layers else precision,
+        )
 
         # Metadata for engine builder
         weights["_layer_types"] = layer_types

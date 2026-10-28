@@ -91,7 +91,7 @@ def test_prepared_checkpoint_keeps_packed_linear_and_scales(tmp_path, algorithm)
     assert (
         weight.input_scale is None if algorithm == "W4A16_NVFP4" else weight.input_scale[0] == 0.125
     )
-    transposed = _transpose_2d(weight, "p")
+    transposed = _transpose_2d(weight, "p", precision="fp16")
     assert transposed.transposed and transposed.packed is weight.packed
     compact = _load_projection(readers, "p.weight", "p", None, 32, 32, precision="fp16")
     assert isinstance(compact, PreparedLinear) and compact.transposed
@@ -144,3 +144,127 @@ def test_native_composition_threads_prepared_context(tmp_path, monkeypatch):
     )
     with pytest.raises(ReachedPreparedGraph):
         native_builder.build_native(request, writer)
+
+
+@pytest.mark.parametrize("precision", ["fp16", "fp32"])
+@pytest.mark.parametrize("fp32_layers", [[], [0], [1], [0, 1]])
+def test_decoder_dense_weights_match_graph_precision(tmp_path, precision, fp32_layers):
+    from safetensors.numpy import save_file
+    from families.nemotron_omni.config import DecoderConfig
+    from families.nemotron_omni.decoder import OmniDecoder
+
+    config = DecoderConfig(
+        raw={
+            "hybrid_override_pattern": "E",
+            "n_routed_experts": 2,
+            "moe_latent_size": 2,
+            "_fp32_layers": fp32_layers,
+        },
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=6,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=2,
+        rms_norm_eps=1e-5,
+        max_position_embeddings=16,
+    )
+    prefix = "language_model.backbone.layers.0"
+    mixer = f"{prefix}.mixer"
+    shapes = {
+        "language_model.backbone.embeddings.weight": (8, 4),
+        "language_model.backbone.norm_f.weight": (4,),
+        "language_model.lm_head.weight": (8, 4),
+        f"{prefix}.norm.weight": (4,),
+        f"{mixer}.gate.weight": (2, 4),
+        f"{mixer}.gate.e_score_correction_bias": (2,),
+        f"{mixer}.fc1_latent_proj.weight": (2, 4),
+        f"{mixer}.fc2_latent_proj.weight": (4, 2),
+        f"{mixer}.shared_experts.up_proj.weight": (6, 4),
+        f"{mixer}.shared_experts.down_proj.weight": (4, 6),
+    }
+    for expert in range(2):
+        shapes[f"{mixer}.experts.{expert}.up_proj.weight"] = (6, 2)
+        shapes[f"{mixer}.experts.{expert}.down_proj.weight"] = (2, 6)
+    values = {key: np.full(shape, 0.12345, np.float32) for key, shape in shapes.items()}
+    save_file(values, str(tmp_path / "model.safetensors"))
+    weights = OmniDecoder().load_weights(tmp_path, config, precision=precision)
+    dtype = np.float32 if precision == "fp32" or 0 in fp32_layers else np.float16
+    for key in (
+        "expert.0.up",
+        "expert.0.down",
+        "expert.1.up",
+        "expert.1.down",
+        "shared.up",
+        "shared.down",
+        "latent_in",
+        "latent_out",
+    ):
+        value = weights[f"layer.0.{key}"]
+        assert value.dtype == dtype
+        np.testing.assert_array_equal(value, np.full(value.shape, 0.12345, dtype))
+    assert weights["layer.0.router"].dtype == np.float32
+    head_dtype = np.float32 if precision == "fp32" or 1 in fp32_layers else np.float16
+    assert weights["w_lm_head"].dtype == head_dtype
+    np.testing.assert_array_equal(
+        weights["w_lm_head"], values["language_model.lm_head.weight"].T.astype(head_dtype)
+    )
+
+
+@pytest.mark.parametrize(
+    "scales,missing",
+    [
+        ({}, None),
+        ({"0.q": 0.125}, None),
+        ({"0.k": 0.25, "0.v": 0.5, "1.k": 0.25, "1.v": 0.5}, None),
+        ({"0.v": 0.5}, "0.mixer.k_proj.k_scale"),
+        ({"0.k": 0.25}, "0.mixer.v_proj.v_scale"),
+        ({"0.k": 0.25, "0.v": 0.5}, "1.mixer.k_proj.k_scale"),
+        ({"0.k": 0.25, "0.v": 0.5, "1.k": 0.25}, "1.mixer.v_proj.v_scale"),
+    ],
+)
+def test_decoder_rejects_partial_fp8_kv_scales(tmp_path, scales, missing):
+    from safetensors.numpy import save_file
+    from families.nemotron_omni.config import DecoderConfig
+    from families.nemotron_omni.decoder import OmniDecoder
+
+    config = DecoderConfig(
+        raw={"hybrid_override_pattern": "**"},
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=6,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=2,
+        rms_norm_eps=1e-5,
+        max_position_embeddings=16,
+    )
+    values = {
+        "language_model.backbone.embeddings.weight": np.ones((8, 4), np.float32),
+        "language_model.backbone.norm_f.weight": np.ones(4, np.float32),
+        "language_model.lm_head.weight": np.ones((8, 4), np.float32),
+    }
+    for layer in range(2):
+        prefix = f"language_model.backbone.layers.{layer}"
+        values[f"{prefix}.norm.weight"] = np.ones(4, np.float32)
+        for projection in ("q", "k", "v", "o"):
+            rows = 2 if projection in {"k", "v"} else 4
+            values[f"{prefix}.mixer.{projection}_proj.weight"] = np.ones((rows, 4), np.float32)
+    for suffix, scale in scales.items():
+        layer, projection = suffix.split(".")
+        key = f"language_model.backbone.layers.{layer}.mixer.{projection}_proj.{projection}_scale"
+        values[key] = np.array([scale], np.float32)
+    save_file(values, str(tmp_path / "model.safetensors"))
+    if missing:
+        with pytest.raises(
+            ValueError, match=f"Missing Nemotron Omni FP8 attention scale: .*{missing}"
+        ):
+            OmniDecoder().load_weights(tmp_path, config)
+    else:
+        weights = OmniDecoder().load_weights(tmp_path, config)
+        assert weights["_fp8_kv_cache"] == ("0.k" in scales)
+        if weights["_fp8_kv_cache"]:
+            for layer in range(2):
+                assert weights[f"layer.{layer}.kv_scales"] == (1.0, 0.25, 0.5)
