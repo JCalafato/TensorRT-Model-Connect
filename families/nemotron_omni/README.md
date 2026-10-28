@@ -75,19 +75,34 @@ projections neither qualify the full model nor prove its memory requirements
 on either GPU; they do rule out a blanket Blackwell-only native restriction.
 
 The native full-checkpoint build succeeds and all six public task modes execute.
-Text, audio and audio/video pass the unchanged normalized edit-distance gate of
-0.15 against the independent vLLM reference. Image, video and image/audio exceed
-that gate (approximately 0.445, 0.825 and 0.327 respectively). Those accuracy-only
-failures remain runnable; their cause is still under investigation. They are not
-fully qualified modes. The owning component/configuration tests pass on the
-repository's existing Transformers 5.2 dependency. The public Model Connect
-Edge build also succeeds, and both text and image tasks execute using an actual
-Edge-backed bundle. Text matches the reference exactly; image exceeds the same
-0.15 gate (approximately 0.735) and remains runnable. Neither backend's image
-result is fully qualified. A separate prompt-only diagnostic matches all six
-native prompt token sequences against the saved independent reference, including
-media placeholder counts. That rules out prompt formation on these inputs, not
-numerical media-feature or decoder differences; it is not a generation test.
+The original free-form description cases failed the independent normalized
+edit-distance gate of 0.15 for image, video and image/audio. With the corrected
+Mamba gating precision, their distances were approximately 0.445, 0.825 and
+0.517. Those accuracy-only failures remain runnable and recorded; they are not
+reclassified as passing descriptions.
+
+The owning E2E now uses human-reviewed factual questions for those three cases:
+vase colors in image order, road direction, and vase colors plus verbatim speech.
+Their golden answers were regenerated with the same pinned independent vLLM
+reference before executing Model Connect, and checked against the unchanged
+fixtures. Text, audio and audio/video questions and goldens are unchanged, as
+are all six modality routes, decoding settings and the 0.15 threshold. A replay
+using the corrected native decoder and retained media plans passes all six:
+text/image/audio/video match exactly, image/audio has distance 0.0137, and
+audio/video 0.0566. This is scoped grounding/transcription evidence, not proof of
+free-form caption equivalence or a fresh full-builder run of every source change.
+The declared premerge case still performs the full public build and inference.
+
+The owning component/configuration tests pass on the repository's existing
+Transformers 5.2 dependency. The public Model Connect Edge build also succeeds,
+and both text and image tasks executed using an actual Edge-backed bundle.
+Text matched the original reference exactly; the original free-form image case
+exceeded the same 0.15 gate (approximately 0.735) and remains runnable. The revised
+factual image question has not been rerun through Edge. A separate prompt-only
+diagnostic matched all six original native prompt token sequences against the
+saved independent reference, including media placeholder counts. That rules out
+prompt formation on those inputs, not numerical media-feature or decoder
+differences; it is not a generation test.
 
 There is a concrete upstream visual-position contract discrepancy: official
 Edge 0.11 and checkpoint RADIO use bilinear `align_corners=True`, which native
@@ -95,8 +110,9 @@ preserves, while vLLM 0.20 uses `False`. A private same-FP16 component diagnosti
 reduced image/video relative feature error from about 8.3%/11.3% to 0.35%/0.48%
 when only the reference position interpolation was aligned. That localizes a
 major visual-feature difference, not the sole cause of generated-text failures.
-The original reference, native behavior and full-model quality gates remain
-unchanged pending model-owner confirmation of the authoritative contract.
+The interpolation semantics and numerical gates remain unchanged pending
+model-owner confirmation of the authoritative contract. Original free-form
+outputs and their failures remain recorded alongside the revised factual tests.
 
 The direct official Edge builder completed language, visual and audio engines.
 Against the independent provider-documented vLLM 0.20.0 reference, text matched

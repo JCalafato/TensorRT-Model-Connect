@@ -23,15 +23,19 @@ python -m tensorrt_model_connect build /path/to/Nemotron-Omni \
 
 ## Evidence boundaries
 
-The full native build and all six public task executions succeed. Text, audio
-and audio/video pass the unchanged independent quality gate; image, video and
-image/audio have recorded accuracy failures and remain runnable. The public
-Model Connect Edge build and text/image executions also succeed: text passes
-quality, while image fails the unchanged gate and remains runnable. Small
-component tests alone are not full-model evidence. Direct official Edge has the
-same text-pass/image-accuracy-failure classification, without establishing a
-shared cause. Direct Edge
-audio and typed-video execution errors are recorded separately.
+The native build and all six public task modes execute. The current owning
+fixture uses independently verified factual grounding/transcription questions;
+all six pass the unchanged 0.15 edit-distance gate in a replay with the corrected
+native decoder and retained media plans. This replay is not a fresh full-builder
+run of every source change; the declared premerge case still builds and executes
+the complete model. Original free-form image, video and image/audio accuracy
+failures remain recorded and runnable, not reclassified as captioning passes.
+
+The public Model Connect Edge build and original text/image executions also
+succeeded: text passed quality, while the free-form image case failed the gate.
+The revised factual image question has not been rerun through Edge. Direct
+Edge audio and typed-video execution errors remain separate known limitations.
+Component tests and scoped factual answers are not catalog-wide qualification.
 
 Small native FP8 and NVFP4 projections execute correctly on Ada; lack of FP4
 acceleration alone is not a correctness restriction. TensorRT rejects these
