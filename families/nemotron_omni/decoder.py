@@ -965,17 +965,22 @@ def _add_mamba2_layer(
     )
 
     # Step 1: Apply silu(gate) to y BEFORE norm
-    gate_activated = graph_ops.add_activation(network, gate, "silu", dtype=dtype)
-    y_gated = network.add_elementwise(y_for_gate, gate_activated, trt.ElementWiseOperation.PROD)
+    # The checkpoint kernel applies the gate and normalization in FP32. Do not
+    # round the gate activation/product to FP16 before the RMS reduction.
+    gate_fp32 = gate
+    y_fp32 = y_for_gate
+    if gate_fp32.dtype != trt.float32:
+        gate_fp32 = network.add_cast(gate_fp32, trt.float32).get_output(0)
+        y_fp32 = network.add_cast(y_fp32, trt.float32).get_output(0)
+    gate_activated = graph_ops.add_activation(network, gate_fp32, "silu", dtype=np.float32)
+    y_gated = network.add_elementwise(y_fp32, gate_activated, trt.ElementWiseOperation.PROD)
 
     # Step 2: Group RMSNorm — reshape to [n_groups, group_size], norm per group
     group_size = d_inner // n_groups
     y_grouped = network.add_shuffle(y_gated.get_output(0))
     y_grouped.reshape_dims = (n_groups, group_size)
     norm_input = y_grouped.get_output(0)
-    norm_output_dtype = norm_input.dtype
-    if dtype != np.float32:
-        norm_input = network.add_cast(norm_input, trt.float32).get_output(0)
+    norm_output_dtype = gate.dtype
 
     sq = network.add_elementwise(norm_input, norm_input, trt.ElementWiseOperation.PROD)
     mean = network.add_reduce(sq.get_output(0), trt.ReduceOperation.AVG, 1 << 1, keep_dims=True)
