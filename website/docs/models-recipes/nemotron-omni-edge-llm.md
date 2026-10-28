@@ -11,8 +11,9 @@ graph construction and the Model Connect C++ runtime, without ONNX.
 
 Optional Edge-LLM 0.11.0 offload is family-owned. Compatible source or wheel
 Python tools use the existing CMake native SDK discovery contract. Text/image
-tasks may use Edge; known audio/video execution failures select the native
-implementation instead. Failed Edge preparation warns and retries native once.
+tasks may use Edge; audio/video tasks select native directly, before Edge
+preparation. Failed Edge preparation for eligible tasks warns and retries native
+once. Publication and inference failures do not switch backends.
 
 ```sh
 python -m tensorrt_model_connect build /path/to/Nemotron-Omni \

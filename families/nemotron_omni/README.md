@@ -43,8 +43,9 @@ RAM-backed `/tmp`.
 
 - Native: text, image, audio, real timestamped video, image/audio and audio/video
   inputs through the corresponding public Model Connect task interfaces.
-- Edge 0.11.0: text/image tasks only. Known audio and typed-video command
-  failures route those task builds to the complete native implementation.
+- Model Connect Edge 0.11.0 offload is limited to text/image tasks. Audio and
+  typed-video task builds select the complete native implementation directly,
+  before attempting Edge preparation; they do not wait for a command failure.
 - `--task audio_video_text_to_text` selects a native bundle with all six native
   task bindings. FP32 computation also selects native; FP16 is the exercised
   full-model profile. Source prepared quantization remains unchanged.
