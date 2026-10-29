@@ -16,11 +16,11 @@ set_target_properties(trtmc_model_alpamayo PROPERTIES
 install(TARGETS trtmc_model_alpamayo LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if(TRTMC_BUILD_TESTS)
-  add_executable(alpamayo_driving_record_test ../tests/cpp/driving_record.cpp)
-  target_link_libraries(alpamayo_driving_record_test PRIVATE
+  add_executable(test_alpamayo_driving_record_test ../tests/cpp/driving_record.cpp)
+  target_link_libraries(test_alpamayo_driving_record_test PRIVATE
     trtmc_alpamayo_action nlohmann_json::nlohmann_json)
-  target_compile_options(alpamayo_driving_record_test PRIVATE -Wall -Wextra -Wpedantic)
-  add_test(NAME alpamayo_driving_record_test COMMAND alpamayo_driving_record_test)
+  target_compile_options(test_alpamayo_driving_record_test PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME alpamayo_driving_record_test COMMAND test_alpamayo_driving_record_test)
   add_executable(alpamayo_action_step_test ../tests/cpp/action_step.cpp)
   target_link_libraries(alpamayo_action_step_test PRIVATE
     trtmc_alpamayo_action trtmc_backend_trt nlohmann_json::nlohmann_json)
