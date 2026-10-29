@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+torch>=2.6
+
+# Independent public driving dataset validation.
+physical-ai-av==0.2.0
+huggingface-hub>=1.0

@@ -1,0 +1,657 @@
+{
+  "package": "transformers==4.57.1",
+  "torch": "2.13.0+cu130",
+  "seed": 734,
+  "config": {
+    "depth": 3,
+    "hidden_size": 16,
+    "intermediate_size": 32,
+    "num_heads": 2,
+    "in_channels": 3,
+    "patch_size": 2,
+    "temporal_patch_size": 2,
+    "spatial_merge_size": 2,
+    "num_position_embeddings": 16,
+    "out_hidden_size": 32,
+    "deepstack_visual_indexes": [
+      0,
+      1,
+      2
+    ],
+    "hidden_act": "gelu_pytorch_tanh"
+  },
+  "grids": {
+    "single": [
+      [
+        1,
+        4,
+        6
+      ]
+    ],
+    "mixed": [
+      [
+        1,
+        2,
+        4
+      ],
+      [
+        2,
+        6,
+        2
+      ]
+    ]
+  },
+  "tf32": false,
+  "scope": "Synthetic packed patches, two spatial layouts, three frame chunks, and all DeepStack outputs. Not raw-image preprocessing or full-model qualification.",
+  "fixture_file": "vision.npz",
+  "repository": "https://github.com/huggingface/transformers",
+  "revision": "v4.57.1",
+  "source": "src/transformers/models/qwen3_vl/modeling_qwen3_vl.py",
+  "arrays": {
+    "weight__vision.patch_embed.proj.weight": {
+      "shape": [
+        16,
+        3,
+        2,
+        2,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.patch_embed.proj.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.pos_embed.weight": {
+      "shape": [
+        16,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.norm1.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.norm1.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.norm2.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.norm2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.attn.qkv.weight": {
+      "shape": [
+        48,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.attn.qkv.bias": {
+      "shape": [
+        48
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.attn.proj.weight": {
+      "shape": [
+        16,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.attn.proj.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.mlp.linear_fc1.weight": {
+      "shape": [
+        32,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.mlp.linear_fc1.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.mlp.linear_fc2.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.0.mlp.linear_fc2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.norm1.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.norm1.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.norm2.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.norm2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.attn.qkv.weight": {
+      "shape": [
+        48,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.attn.qkv.bias": {
+      "shape": [
+        48
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.attn.proj.weight": {
+      "shape": [
+        16,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.attn.proj.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.mlp.linear_fc1.weight": {
+      "shape": [
+        32,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.mlp.linear_fc1.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.mlp.linear_fc2.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.1.mlp.linear_fc2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.norm1.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.norm1.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.norm2.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.norm2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.attn.qkv.weight": {
+      "shape": [
+        48,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.attn.qkv.bias": {
+      "shape": [
+        48
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.attn.proj.weight": {
+      "shape": [
+        16,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.attn.proj.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.mlp.linear_fc1.weight": {
+      "shape": [
+        32,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.mlp.linear_fc1.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.mlp.linear_fc2.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.blocks.2.mlp.linear_fc2.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.norm.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.norm.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.linear_fc1.weight": {
+      "shape": [
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.linear_fc1.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.linear_fc2.weight": {
+      "shape": [
+        32,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.merger.linear_fc2.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.norm.weight": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.norm.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.linear_fc1.weight": {
+      "shape": [
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.linear_fc1.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.linear_fc2.weight": {
+      "shape": [
+        32,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.0.linear_fc2.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.norm.weight": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.norm.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.linear_fc1.weight": {
+      "shape": [
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.linear_fc1.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.linear_fc2.weight": {
+      "shape": [
+        32,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.1.linear_fc2.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.norm.weight": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.norm.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.linear_fc1.weight": {
+      "shape": [
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.linear_fc1.bias": {
+      "shape": [
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.linear_fc2.weight": {
+      "shape": [
+        32,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "weight__vision.deepstack_merger_list.2.linear_fc2.bias": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "single_pixels": {
+      "shape": [
+        24,
+        24
+      ],
+      "dtype": "float32"
+    },
+    "single_position_indices": {
+      "shape": [
+        4,
+        24
+      ],
+      "dtype": "int32"
+    },
+    "single_position_weights": {
+      "shape": [
+        4,
+        24
+      ],
+      "dtype": "float32"
+    },
+    "single_mask": {
+      "shape": [
+        1,
+        24,
+        24
+      ],
+      "dtype": "float32"
+    },
+    "mixed_pixels": {
+      "shape": [
+        32,
+        24
+      ],
+      "dtype": "float32"
+    },
+    "mixed_position_indices": {
+      "shape": [
+        4,
+        32
+      ],
+      "dtype": "int32"
+    },
+    "mixed_position_weights": {
+      "shape": [
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "mixed_mask": {
+      "shape": [
+        1,
+        32,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "single_cosine": {
+      "shape": [
+        24,
+        1,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "single_sine": {
+      "shape": [
+        24,
+        1,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "fp32_single_features": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_single_deepstack_0": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_single_deepstack_1": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_single_deepstack_2": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "mixed_cosine": {
+      "shape": [
+        32,
+        1,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "mixed_sine": {
+      "shape": [
+        32,
+        1,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "fp32_mixed_features": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_mixed_deepstack_0": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_mixed_deepstack_1": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_mixed_deepstack_2": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_single_features": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_single_deepstack_0": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_single_deepstack_1": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_single_deepstack_2": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_mixed_features": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_mixed_deepstack_0": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_mixed_deepstack_1": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_mixed_deepstack_2": {
+      "shape": [
+        8,
+        32
+      ],
+      "dtype": "float32"
+    }
+  }
+}

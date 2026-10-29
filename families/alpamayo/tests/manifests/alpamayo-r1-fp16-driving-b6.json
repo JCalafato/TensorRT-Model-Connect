@@ -1,0 +1,107 @@
+{
+  "name": "alpamayo-r1-fp16-driving-b6",
+  "family": "alpamayo",
+  "hf_id": "nvidia/Alpamayo-R1-10B",
+  "hf_revision": "dd4a24cacefc9a6477a6dfc7354de2443401409d",
+  "task": "structured_decision",
+  "precision": "fp16",
+  "bundle": "alpamayo-r1-fp16-driving-b6.bundle",
+  "max_batch_size": 6,
+  "max_sequence_length": 4096,
+  "tensor_parallel_size": 1,
+  "trust_remote_code": false,
+  "testcases": [
+    {
+      "name": "alpamayo-r1-fp16-driving-b6",
+      "premerge": true,
+      "reference_backend": "physical_ai_av_ground_truth",
+      "modalities": [
+        "video",
+        "history",
+        "reasoning",
+        "trajectory"
+      ]
+    }
+  ],
+  "sample": {
+    "clip_id": "030c760c-ae38-49aa-9ad8-f5650a545d26",
+    "t0_us": 5100000,
+    "dataset": "nvidia/PhysicalAI-Autonomous-Vehicles",
+    "dataset_revision": "39414de6f0ab867238ad6a0299fcd18b26081b42",
+    "provider_revision": "11a0e01c13a5622377c45ee37d653351453ec43b",
+    "camera_indices": [
+      0,
+      1,
+      2,
+      6
+    ],
+    "provider_repository": "NVlabs/alpamayo",
+    "scope": "One public provider example, not reproduction of the broader evaluation set.",
+    "frame_count": 16,
+    "frame_shape": [
+      1080,
+      1920,
+      3
+    ],
+    "state_arrays": {
+      "camera_indices": {
+        "shape": [
+          4
+        ],
+        "dtype": "int64"
+      },
+      "ego_history_xyz": {
+        "shape": [
+          1,
+          1,
+          16,
+          3
+        ],
+        "dtype": "float32"
+      },
+      "ego_history_rot": {
+        "shape": [
+          1,
+          1,
+          16,
+          3,
+          3
+        ],
+        "dtype": "float32"
+      },
+      "ego_future_xyz": {
+        "shape": [
+          1,
+          1,
+          64,
+          3
+        ],
+        "dtype": "float32"
+      },
+      "ego_future_rot": {
+        "shape": [
+          1,
+          1,
+          64,
+          3,
+          3
+        ],
+        "dtype": "float32"
+      },
+      "relative_timestamps": {
+        "shape": [
+          4,
+          4
+        ],
+        "dtype": "float32"
+      },
+      "absolute_timestamps": {
+        "shape": [
+          4,
+          4
+        ],
+        "dtype": "int64"
+      }
+    }
+  }
+}

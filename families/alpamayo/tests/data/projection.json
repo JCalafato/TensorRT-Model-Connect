@@ -1,0 +1,202 @@
+{
+  "repository": "https://github.com/NVlabs/alpamayo",
+  "revision": "11a0e01c13a5622377c45ee37d653351453ec43b",
+  "source": "src/alpamayo_r1/models/action_in_proj.py",
+  "torch": "2.13.0+cu130",
+  "seed": 731,
+  "device": "NVIDIA A30",
+  "tf32": false,
+  "precision": [
+    "fp32",
+    "fp16 CUDA autocast"
+  ],
+  "scope": "Synthetic action projections only; not trajectory/model qualification",
+  "fixture_file": "projection.npz",
+  "arrays": {
+    "weight__action_in_proj.sinus.0.freqs": {
+      "shape": [
+        1,
+        10
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.sinus.1.freqs": {
+      "shape": [
+        1,
+        10
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.timestep_fourier_encoder.freqs": {
+      "shape": [
+        1,
+        10
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.0.weight": {
+      "shape": [
+        12,
+        60
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.0.bias": {
+      "shape": [
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.2.weight": {
+      "shape": [
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.3.weight": {
+      "shape": [
+        12,
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.3.bias": {
+      "shape": [
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.5.weight": {
+      "shape": [
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.6.weight": {
+      "shape": [
+        16,
+        12
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.encoder.trunk.6.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.norm.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_in_proj.norm.bias": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_out_proj.weight": {
+      "shape": [
+        2,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__action_out_proj.bias": {
+      "shape": [
+        2
+      ],
+      "dtype": "float32"
+    },
+    "actions": {
+      "shape": [
+        2,
+        4,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "timesteps": {
+      "shape": [
+        2,
+        1,
+        1
+      ],
+      "dtype": "float32"
+    },
+    "hidden": {
+      "shape": [
+        2,
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_1_input": {
+      "shape": [
+        1,
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_1_output": {
+      "shape": [
+        1,
+        4,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "fp32_2_input": {
+      "shape": [
+        2,
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_2_output": {
+      "shape": [
+        2,
+        4,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "fp16_1_input": {
+      "shape": [
+        1,
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_1_output": {
+      "shape": [
+        1,
+        4,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "fp16_2_input": {
+      "shape": [
+        2,
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_2_output": {
+      "shape": [
+        2,
+        4,
+        2
+      ],
+      "dtype": "float32"
+    }
+  }
+}

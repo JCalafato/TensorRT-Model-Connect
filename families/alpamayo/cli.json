@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "name": "build",
+      "help": "Build a complete Alpamayo driving bundle",
+      "executor": "python",
+      "handler": "cli:build",
+      "arguments": [
+        {
+          "name": "model",
+          "type": "string"
+        },
+        {
+          "name": "output",
+          "flags": [
+            "-o",
+            "--output"
+          ],
+          "type": "path",
+          "required": true
+        },
+        {
+          "name": "revision",
+          "flags": [
+            "--revision"
+          ],
+          "type": "string"
+        },
+        {
+          "name": "max_batch_size",
+          "flags": [
+            "--max-batch-size"
+          ],
+          "type": "int",
+          "default": 1,
+          "choices": [
+            1,
+            6
+          ]
+        },
+        {
+          "name": "max_sequence_length",
+          "flags": [
+            "--max-sequence-length"
+          ],
+          "type": "int",
+          "default": 4096
+        },
+        {
+          "name": "max_new_tokens",
+          "flags": [
+            "--max-new-tokens"
+          ],
+          "type": "int",
+          "default": 128
+        },
+        {
+          "name": "execution_variant",
+          "flags": [
+            "--execution-variant"
+          ],
+          "type": "string",
+          "default": "auto",
+          "choices": [
+            "auto",
+            "native"
+          ],
+          "help": "Use compatible installed Edge tools with native fallback, or force native TensorRT"
+        }
+      ]
+    }
+  ]
+}

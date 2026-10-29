@@ -1,0 +1,349 @@
+{
+  "package": "transformers==4.57.1",
+  "torch": "2.13.0+cu130",
+  "seed": 732,
+  "config": {
+    "hidden_size": 32,
+    "intermediate_size": 48,
+    "num_hidden_layers": 2,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "head_dim": 8,
+    "vocab_size": 16,
+    "rms_norm_eps": 1e-06,
+    "rope_theta": 5000000.0,
+    "hidden_act": "silu",
+    "attention_bias": false,
+    "rope_scaling": {
+      "rope_type": "default",
+      "mrope_section": [
+        2,
+        1,
+        1
+      ],
+      "mrope_interleaved": true
+    }
+  },
+  "attention": "eager, explicit non-causal additive mask",
+  "tf32": false,
+  "scope": "Synthetic expert with two action steps and cropped immutable prefix; not full-model validation",
+  "fixture_file": "expert.npz",
+  "repository": "https://github.com/huggingface/transformers",
+  "revision": "v4.57.1",
+  "source": "src/transformers/models/qwen3_vl/modeling_qwen3_vl.py",
+  "arrays": {
+    "weight__expert.layers.0.self_attn.q_proj.weight": {
+      "shape": [
+        32,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.self_attn.k_proj.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.self_attn.v_proj.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.self_attn.o_proj.weight": {
+      "shape": [
+        32,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.self_attn.q_norm.weight": {
+      "shape": [
+        8
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.self_attn.k_norm.weight": {
+      "shape": [
+        8
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.mlp.gate_proj.weight": {
+      "shape": [
+        48,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.mlp.up_proj.weight": {
+      "shape": [
+        48,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.mlp.down_proj.weight": {
+      "shape": [
+        32,
+        48
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.input_layernorm.weight": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.0.post_attention_layernorm.weight": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.q_proj.weight": {
+      "shape": [
+        32,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.k_proj.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.v_proj.weight": {
+      "shape": [
+        16,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.o_proj.weight": {
+      "shape": [
+        32,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.q_norm.weight": {
+      "shape": [
+        8
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.self_attn.k_norm.weight": {
+      "shape": [
+        8
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.mlp.gate_proj.weight": {
+      "shape": [
+        48,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.mlp.up_proj.weight": {
+      "shape": [
+        48,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.mlp.down_proj.weight": {
+      "shape": [
+        32,
+        48
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.input_layernorm.weight": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.layers.1.post_attention_layernorm.weight": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "weight__expert.norm.weight": {
+      "shape": [
+        32
+      ],
+      "dtype": "float32"
+    },
+    "hidden_0": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "hidden_1": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "prefix_key_0": {
+      "shape": [
+        2,
+        2,
+        3,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "prefix_value_0": {
+      "shape": [
+        2,
+        2,
+        3,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "prefix_key_1": {
+      "shape": [
+        2,
+        2,
+        3,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "prefix_value_1": {
+      "shape": [
+        2,
+        2,
+        3,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "mask": {
+      "shape": [
+        2,
+        1,
+        4,
+        7
+      ],
+      "dtype": "float32"
+    },
+    "cosine_1": {
+      "shape": [
+        1,
+        1,
+        4,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "sine_1": {
+      "shape": [
+        1,
+        1,
+        4,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "fp32_1_0": {
+      "shape": [
+        1,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_1_1": {
+      "shape": [
+        1,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "cosine_2": {
+      "shape": [
+        2,
+        1,
+        4,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "sine_2": {
+      "shape": [
+        2,
+        1,
+        4,
+        8
+      ],
+      "dtype": "float32"
+    },
+    "fp32_2_0": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_2_1": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_1_0": {
+      "shape": [
+        1,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_1_1": {
+      "shape": [
+        1,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_2_0": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_2_1": {
+      "shape": [
+        2,
+        4,
+        32
+      ],
+      "dtype": "float32"
+    }
+  }
+}
