@@ -13,6 +13,13 @@
 
 namespace trtmc::alpamayo {
 
+// Broadcast the original prompt exclusions to noncausal action queries and
+// exclude reasoning positions beyond each row's first future-marker offset.
+// Host-only construction also validates malformed handoffs before allocation.
+std::vector<float> make_action_prefix_mask(const std::vector<std::vector<float>>& prompt_mask,
+                                           const std::vector<int64_t>& offsets, int64_t length,
+                                           int64_t waypoints);
+
 // One velocity evaluation in the action flow. Prefix KV, padding mask and
 // rotary tables are immutable across steps and are uploaded once per context.
 // This internal stage does not implement reasoning or physical pose decoding.
@@ -29,7 +36,9 @@ class ActionStep {
     // owns provider action positions and masks: early-finished rows cannot
     // attend their trailing reasoning tokens, and action tokens are noncausal.
     void set_generated_context(const TensorMap& prefix, const std::vector<int64_t>& offsets,
-                               const std::vector<int64_t>& rope_deltas, float rope_theta);
+                               const std::vector<int64_t>& rope_deltas,
+                               const std::vector<std::vector<float>>& prompt_mask,
+                               float rope_theta);
 
     // Returns FP32 velocity in [batch, waypoints, 2] order. The engine and
     // immutable context remain available for subsequent denoising steps.

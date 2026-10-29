@@ -161,5 +161,6 @@ def build(request, writer):
                 with writer.open_section(name) as section:
                     section.write(memoryview(plan))
                 del plan
+                weights.release()
 
         dispatch.build(request, writer, native, metadata, backbone)

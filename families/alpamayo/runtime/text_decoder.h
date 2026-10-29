@@ -121,6 +121,7 @@ struct ReasoningResult {
     std::vector<std::vector<int32_t>> tokens;
     std::vector<int64_t> action_offsets;
     std::vector<int64_t> rope_deltas;
+    std::vector<std::vector<float>> prompt_mask; // Original last-query prefix exclusions.
     int64_t generated{0};
 };
 

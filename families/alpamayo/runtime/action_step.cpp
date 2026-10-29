@@ -22,6 +22,44 @@ void require(bool condition, const std::string& message) {
 
 } // namespace
 
+std::vector<float> make_action_prefix_mask(const std::vector<std::vector<float>>& prompt_mask,
+                                           const std::vector<int64_t>& offsets, int64_t length,
+                                           int64_t waypoints) {
+    require(length > 0 && waypoints > 0 && length <= INT64_MAX - waypoints && !offsets.empty() &&
+                prompt_mask.size() == offsets.size(),
+            "invalid action prompt mask dimensions");
+    const auto columns = static_cast<std::size_t>(length + waypoints);
+    std::size_t elements = offsets.size();
+    for (const auto dimension : {static_cast<std::size_t>(waypoints), columns}) {
+        require(elements <= std::numeric_limits<std::size_t>::max() / sizeof(float) / dimension,
+                "action prompt mask size overflow");
+        elements *= dimension;
+    }
+    const auto prompt_length = prompt_mask.front().size();
+    require(prompt_length > 0 && prompt_length <= static_cast<uint64_t>(length),
+            "action prompt mask exceeds cache");
+    for (std::size_t row = 0; row < offsets.size(); ++row) {
+        require(offsets[row] > 0 && offsets[row] <= length + 1 &&
+                    prompt_length <= static_cast<uint64_t>(offsets[row]) &&
+                    prompt_mask[row].size() == prompt_length,
+                "invalid action prompt mask row or offset");
+        require(std::all_of(prompt_mask[row].begin(), prompt_mask[row].end(),
+                            [](float value) { return std::isfinite(value) && value <= 0; }),
+                "action prompt mask must contain finite nonpositive values");
+    }
+    std::vector<float> mask(elements, 0);
+    for (std::size_t row = 0; row < offsets.size(); ++row) {
+        for (int64_t step = 0; step < waypoints; ++step) {
+            auto* output =
+                mask.data() + (row * static_cast<std::size_t>(waypoints) + step) * columns;
+            std::copy(prompt_mask[row].begin(), prompt_mask[row].end(), output);
+            for (int64_t position = offsets[row]; position < length; ++position)
+                output[position] = std::numeric_limits<float>::lowest();
+        }
+    }
+    return mask;
+}
+
 ActionStep::ActionStep(std::unique_ptr<ITrtModule> module) : module_(std::move(module)) {
     require(module_ && module_->ok(), "engine is unavailable");
     require(module_->optimization_profile_count() == 1, "expected one action profile");
@@ -125,7 +163,9 @@ void ActionStep::set_context(const TensorMap& inputs) {
 }
 
 void ActionStep::set_generated_context(const TensorMap& prefix, const std::vector<int64_t>& offsets,
-                                       const std::vector<int64_t>& rope_deltas, float rope_theta) {
+                                       const std::vector<int64_t>& rope_deltas,
+                                       const std::vector<std::vector<float>>& prompt_mask,
+                                       float rope_theta) {
     require(module_ && prefix.size() == static_cast<std::size_t>(2 * layers_),
             "incomplete generated prefix");
     const auto found = prefix.find("prefix_key_0");
@@ -166,8 +206,8 @@ void ActionStep::set_generated_context(const TensorMap& prefix, const std::vecto
     };
     const std::vector<int64_t> rotary_shape{batch, 1, waypoints_, head_dim_};
     const std::vector<int64_t> mask_shape{batch, 1, waypoints_, length + waypoints_};
+    auto mask = make_action_prefix_mask(prompt_mask, offsets, length, waypoints_);
     std::vector<float> cosine(elements(rotary_shape)), sine(cosine.size());
-    std::vector<float> mask(elements(mask_shape), 0);
     std::vector<float> inverse(static_cast<std::size_t>(head_dim_ / 2));
     for (int64_t i = 0; i < head_dim_ / 2; ++i)
         inverse[i] =
@@ -182,11 +222,6 @@ void ActionStep::set_generated_context(const TensorMap& prefix, const std::vecto
                 cosine[index] = std::cos(angle);
                 sine[index] = std::sin(angle);
             }
-            const auto start =
-                static_cast<std::size_t>((row * waypoints_ + step) * (length + waypoints_));
-            for (int64_t position = offsets[row]; position < length; ++position)
-                mask[start + static_cast<std::size_t>(position)] =
-                    std::numeric_limits<float>::lowest();
         }
     }
     auto inputs = prefix;

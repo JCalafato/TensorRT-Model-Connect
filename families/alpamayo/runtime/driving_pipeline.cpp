@@ -52,7 +52,8 @@ std::vector<DrivingSample> finish_driving(ActionStep& action, const DrivingPromp
     auto decoders = prepare_histories(histories, options, initial_noise);
     const auto batch = histories.size(), row_size = options.action_space.waypoints * 2;
     require(reasoning.tokens.size() == batch && reasoning.action_offsets.size() == batch &&
-                reasoning.rope_deltas.size() == batch && reasoning.generated > 0,
+                reasoning.rope_deltas.size() == batch && reasoning.prompt_mask.size() == batch &&
+                reasoning.generated > 0,
             "reasoning batch or generated count is invalid");
     std::vector<DrivingSample> result(batch);
     for (std::size_t row = 0; row < batch; ++row) {
@@ -63,7 +64,8 @@ std::vector<DrivingSample> finish_driving(ActionStep& action, const DrivingPromp
         result[row].text = prompt.extract_text(result[row].generated_tokens);
     }
     action.set_generated_context(reasoning.cache.action_prefix(), reasoning.action_offsets,
-                                 reasoning.rope_deltas, options.positions.rope_theta);
+                                 reasoning.rope_deltas, reasoning.prompt_mask,
+                                 options.positions.rope_theta);
     const auto actions = action.integrate(initial_noise, options.denoising_steps);
     require(actions.size() == batch * row_size, "action output size is inconsistent");
     for (std::size_t row = 0; row < batch; ++row) {

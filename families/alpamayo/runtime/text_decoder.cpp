@@ -657,6 +657,14 @@ ReasoningResult TextDecoder::generate(const TensorMap& prepared,
         rows.emplace_back(prompt + row * length, prompt + (row + 1) * length);
     ReasoningHistory history(std::move(rows), options);
     auto state = evaluate(prepared);
+    // evaluate has validated the complete mask before this host-side copy.
+    // Retain all prefix exclusions, not just a count inferred from pad IDs.
+    const auto* prefill_mask = static_cast<const float*>(prepared.at("mask").data);
+    std::vector<std::vector<float>> prompt_mask;
+    for (int64_t row = 0; row < batch; ++row) {
+        const auto* begin = prefill_mask + (row * length + length - 1) * length;
+        prompt_mask.emplace_back(begin, begin + length);
+    }
     std::mt19937_64 random(options.seed);
     std::vector<int32_t> selected(static_cast<std::size_t>(batch));
     std::vector<int32_t> visual_mask(static_cast<std::size_t>(batch), 0);
@@ -703,10 +711,9 @@ ReasoningResult TextDecoder::generate(const TensorMap& prepared,
         // Retain the original padding/custom prefix exclusions at every decode
         // step; newly appended positions are visible. An all-zero mask would
         // incorrectly reintroduce the padded prompt's keys after prefill.
-        const auto* prefill_mask = static_cast<const float*>(prepared.at("mask").data);
         for (int64_t row = 0; row < batch; ++row)
-            std::copy_n(prefill_mask + (row * length + length - 1) * length, length,
-                        mask.data() + row * (past + 1));
+            std::copy(prompt_mask[row].begin(), prompt_mask[row].end(),
+                      mask.data() + row * (past + 1));
         auto inputs = state.past();
         inputs.emplace("tokens", Tensor{selected.data(), {batch, 1}, DType::kInt32});
         inputs.emplace("visual", Tensor{zeros.data(), {batch, 1, hidden_}, dtype_});
@@ -721,8 +728,8 @@ ReasoningResult TextDecoder::generate(const TensorMap& prepared,
         // is released; no in-place KV alias or synthetic expert context is used.
         state = evaluate(inputs);
     }
-    return {std::move(state), history.padded(), history.action_offsets(), rope_deltas,
-            history.generated()};
+    return {std::move(state), history.padded(),       history.action_offsets(),
+            rope_deltas,      std::move(prompt_mask), history.generated()};
 }
 
 } // namespace trtmc::alpamayo

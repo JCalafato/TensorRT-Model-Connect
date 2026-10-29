@@ -459,6 +459,7 @@ int decode_text(const std::string& path) {
                                      {"tokens", generated.tokens},
                                      {"action_offsets", generated.action_offsets},
                                      {"rope_deltas", generated.rope_deltas},
+                                     {"prompt_mask", generated.prompt_mask},
                                      {"generated", generated.generated},
                                      {"cache_shape", generated.cache.shapes.at("key_0")}});
                 if (prompt) {
@@ -517,6 +518,9 @@ int finish_driving_cases(const std::string& path) {
     reasoning.action_offsets = generated.at("action_offsets").get<std::vector<int64_t>>();
     reasoning.rope_deltas = generated.at("rope_deltas").get<std::vector<int64_t>>();
     reasoning.generated = generated.at("generated");
+    // Earlier unpadded component fixtures predate this explicit handoff field.
+    reasoning.prompt_mask = generated.value(
+        "prompt_mask", std::vector<std::vector<float>>(reasoning.tokens.size(), {0.0F}));
     {
         HostInputs inputs(manifest.at("prefix"));
         for (const auto& [name, tensor] : inputs.tensors) {
@@ -768,6 +772,9 @@ int main(int argc, char** argv) {
                         action.set_generated_context(
                             context.tensors, generated.at("offsets").get<std::vector<int64_t>>(),
                             generated.at("rope_deltas").get<std::vector<int64_t>>(),
+                            generated.value("prompt_mask",
+                                            std::vector<std::vector<float>>(
+                                                generated.at("offsets").size(), {0.0F})),
                             generated.at("rope_theta").get<float>());
                 } catch (const std::invalid_argument& error) {
                     if (!expect_error)

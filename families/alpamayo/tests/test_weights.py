@@ -4,6 +4,7 @@
 """Lazy storage, source dtypes and family namespace mapping."""
 
 import json
+import weakref
 
 import numpy as np
 import pytest
@@ -58,6 +59,14 @@ def test_lazy_shards_and_cached_conversion(tmp_path, monkeypatch):
         assert value.dtype == np.float32
         assert value.item() == 0.6810426712036133
         assert value.item() != 0.6796875  # The evaluator's BF16-rounded constant.
+        assert opened == ["part1.safetensors", "part2.safetensors"]
+        # This array has no owner outside the reader cache.
+        retained = weakref.ref(reader.array("action_out_proj.bias"))
+        reader.release()
+        assert retained() is None
+        again = reader.array("text.embed_tokens.weight", np.float16)
+        assert again is not array
+        np.testing.assert_array_equal(again, array)
         assert opened == ["part1.safetensors", "part2.safetensors"]
     np.testing.assert_array_equal(array, np.arange(12, dtype=np.float16).reshape(4, 3))
     with pytest.raises(RuntimeError, match="closed"):

@@ -4,6 +4,8 @@
  */
 #include "driving_record.h"
 
+#include "action_step.h"
+
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -81,6 +83,36 @@ void rejects(const std::function<void(StructuredDecisionRequest&)>& edit) {
 
 int main() {
     try {
+        const auto blocked = std::numeric_limits<float>::lowest();
+        const auto mask =
+            make_action_prefix_mask({{blocked, blocked, 0}, {0, -7, 0}}, {4, 6}, 5, 2);
+        check(mask ==
+                  std::vector<float>({blocked, blocked, 0,  0, blocked, 0,  0, blocked, blocked, 0,
+                                      0,       blocked, 0,  0, 0,       -7, 0, 0,       0,       0,
+                                      0,       0,       -7, 0, 0,       0,  0, 0}),
+              "action handoff lost padding, custom exclusions, or future-token visibility");
+        for (const auto& invalid : std::vector<std::function<void()>>{
+                 [] { make_action_prefix_mask({}, {3}, 3, 2); },
+                 [] { make_action_prefix_mask({{}}, {3}, 3, 2); },
+                 [] { make_action_prefix_mask({{0, 0, 0, 0}}, {3}, 3, 2); },
+                 [] { make_action_prefix_mask({{0, 0}}, {1}, 3, 2); },
+                 [] { make_action_prefix_mask({{0}}, {0}, 3, 2); },
+                 [] { make_action_prefix_mask({{0}}, {5}, 3, 2); },
+                 [] { make_action_prefix_mask({{0}, {0, 0}}, {3, 3}, 3, 2); },
+                 [] { make_action_prefix_mask({{1}}, {3}, 3, 2); },
+                 [] {
+                     make_action_prefix_mask({{std::numeric_limits<float>::quiet_NaN()}}, {3}, 3,
+                                             2);
+                 },
+                 [] { make_action_prefix_mask({{0}}, {3}, INT64_MAX, 2); }}) {
+            bool rejected = false;
+            try {
+                invalid();
+            } catch (const std::invalid_argument&) {
+                rejected = true;
+            }
+            check(rejected, "malformed action mask handoff was accepted");
+        }
         auto input = request();
         auto record = prepare_driving_request(input, defaults(), 1);
         check(record.histories.size() == 1 && record.images[0].size() == 16,

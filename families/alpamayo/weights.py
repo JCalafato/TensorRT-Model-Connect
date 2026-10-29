@@ -64,6 +64,10 @@ class Weights:
         self._arrays.clear()
         self._closed = True
 
+    def release(self) -> None:
+        """Release converted arrays after the owning engine has been serialized."""
+        self._arrays.clear()
+
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._sources))
 
