@@ -1,0 +1,90 @@
+{
+  "package": "transformers==5.11.0",
+  "torch": "2.13.0+cu130",
+  "seed": 735,
+  "classes": [
+    "Gemma4VisionModel",
+    "DiffusionGemmaMultimodalEmbedder"
+  ],
+  "attention": "sdpa",
+  "scope": "Synthetic two-layer vision and projection; square and padded patch layouts. No full model qualification.",
+  "files": [
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "reference.npz"
+  ],
+  "fixture_file": "reference.npz",
+  "source_revision": "v5.11.0",
+  "source": "https://github.com/huggingface/transformers/tree/v5.11.0/src/transformers/models/gemma4",
+  "arrays": {
+    "square_positions": {
+      "shape": [
+        36,
+        2
+      ],
+      "dtype": "int32"
+    },
+    "square_pixels": {
+      "shape": [
+        36,
+        12
+      ],
+      "dtype": "float32"
+    },
+    "square_fp32": {
+      "shape": [
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "square_mask": {
+      "shape": [
+        4
+      ],
+      "dtype": "int32"
+    },
+    "square_fp16": {
+      "shape": [
+        4,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "padded_positions": {
+      "shape": [
+        36,
+        2
+      ],
+      "dtype": "int32"
+    },
+    "padded_pixels": {
+      "shape": [
+        36,
+        12
+      ],
+      "dtype": "float32"
+    },
+    "padded_fp32": {
+      "shape": [
+        2,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "padded_mask": {
+      "shape": [
+        4
+      ],
+      "dtype": "int32"
+    },
+    "padded_fp16": {
+      "shape": [
+        2,
+        16
+      ],
+      "dtype": "float32"
+    }
+  }
+}

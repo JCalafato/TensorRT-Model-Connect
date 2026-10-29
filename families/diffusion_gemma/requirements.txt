@@ -1,0 +1,2 @@
+ml_dtypes>=0.5
+safetensors>=0.5

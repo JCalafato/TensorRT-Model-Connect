@@ -1,0 +1,25 @@
+{
+  "name": "diffusion-gemma-26b-a4b-nvfp4",
+  "hf_id": "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
+  "hf_revision": "ec4ff3df205028f4e81c954c2227f9312b3ec2ea",
+  "bundle": "diffusion-gemma-26b-a4b-nvfp4.bundle",
+  "family": "diffusion_gemma",
+  "task": "images_text_to_text",
+  "precision": "fp16",
+  "quantization": "nvfp4",
+  "max_sequence_length": 4096,
+  "tensor_parallel_size": 1,
+  "trust_remote_code": false,
+  "testcases": [
+    {
+      "name": "diffusion-gemma-26b-a4b-nvfp4",
+      "premerge": true,
+      "reference_backend": "fixed_ground_truth",
+      "modalities": [
+        "text",
+        "image",
+        "multiple_images"
+      ]
+    }
+  ]
+}

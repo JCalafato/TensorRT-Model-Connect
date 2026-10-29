@@ -1,0 +1,113 @@
+{
+  "source": "https://github.com/huggingface/transformers/blob/v5.11.0/src/transformers/models/diffusion_gemma/modeling_diffusion_gemma.py",
+  "package": "transformers==5.11.0",
+  "torch": "2.13.0+cu130",
+  "seed": 42,
+  "classes_executed_unchanged": [
+    "DiffusionGemmaRMSNorm",
+    "DiffusionGemmaSelfConditioning",
+    "DiffusionGemmaTextScaledWordEmbedding"
+  ],
+  "scope": "Small self-conditioning, scaled embedding and next-step soft-embedding components; not full-model qualification",
+  "reference_device": "cpu",
+  "fixture_file": "conditioning-reference.npz",
+  "source_revision": "v5.11.0",
+  "arrays": {
+    "weight__model.decoder.self_conditioning.pre_norm.weight": {
+      "shape": [
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__model.decoder.self_conditioning.gate_proj.weight": {
+      "shape": [
+        24,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__model.decoder.self_conditioning.up_proj.weight": {
+      "shape": [
+        24,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "weight__model.decoder.self_conditioning.down_proj.weight": {
+      "shape": [
+        16,
+        24
+      ],
+      "dtype": "float32"
+    },
+    "weight__model.decoder.embed_tokens.weight": {
+      "shape": [
+        32,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "tokens": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32"
+    },
+    "soft": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "logits": {
+      "shape": [
+        3,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_conditioned": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_initial": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_next_soft": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_conditioned": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_initial": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_next_soft": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    }
+  }
+}

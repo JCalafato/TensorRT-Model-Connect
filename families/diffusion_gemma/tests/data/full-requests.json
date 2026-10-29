@@ -1,0 +1,61 @@
+{
+  "edge_revision": "95515c2f87fba8982db5a519f9022277667b3cc9",
+  "generation": {
+    "max_new_tokens": 128,
+    "num_steps": 16,
+    "seed": 17,
+    "use_chat_template": true,
+    "enable_thinking": false
+  },
+  "quality_rule": "Known answers compare lowercased whitespace-normalized text after removing terminal punctuation; no tolerance changes. Official open-ended prompts recorded separately, not exact-match scored.",
+  "cases": [
+    {
+      "id": "addition",
+      "prompt": "What is 17 + 25? Reply with only the number.",
+      "expected": "42",
+      "images": []
+    },
+    {
+      "id": "multiplication",
+      "prompt": "What is 7 * 9? Reply with only the number.",
+      "expected": "63",
+      "images": []
+    },
+    {
+      "id": "capital",
+      "prompt": "What is the capital of France? Reply with only the city name.",
+      "expected": "Paris",
+      "images": []
+    },
+    {
+      "id": "image_animal",
+      "prompt": "What animal is beside the woman? Reply with only the animal name.",
+      "expected": "dog",
+      "images": [
+        "woman_and_dog.jpeg"
+      ]
+    },
+    {
+      "id": "image_place",
+      "prompt": "Is this scene on a beach or in a forest? Reply with only beach or forest.",
+      "expected": "beach",
+      "images": [
+        "woman_and_dog.jpeg"
+      ]
+    },
+    {
+      "id": "two_images",
+      "prompt": "Name the animal in each image, in image order. Reply with only the two animal names separated by a comma.",
+      "expected": "red panda, giant panda",
+      "images": [
+        "red_panda.jpeg",
+        "giant_panda.jpeg"
+      ]
+    }
+  ],
+  "assets": [
+    "woman_and_dog.jpeg",
+    "red_panda.jpeg",
+    "giant_panda.jpeg"
+  ]
+}

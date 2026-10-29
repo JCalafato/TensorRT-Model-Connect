@@ -1,0 +1,51 @@
+{
+  "source": "https://github.com/huggingface/transformers/blob/v5.11.0/src/transformers/models/diffusion_gemma/generation_diffusion_gemma.py",
+  "package": "transformers==5.11.0",
+  "logits": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      10.0,
+      0.0,
+      -10.0
+    ],
+    [
+      2.0,
+      1.0,
+      0.0
+    ],
+    [
+      -2.0,
+      2.0,
+      0.0
+    ]
+  ],
+  "entropy_bound": 0.005,
+  "entropy": [
+    1.0986123085021973,
+    0.0004997962387278676,
+    0.8323954939842224,
+    0.4410575032234192
+  ],
+  "accepted": [
+    false,
+    true,
+    false,
+    true
+  ],
+  "argmax": [
+    0,
+    0,
+    0,
+    1
+  ],
+  "stable_confident_history2": [
+    false,
+    false,
+    true
+  ],
+  "scope": "Entropy/acceptance and whole-canvas stopping only, not RNG cross-framework token identity"
+}

@@ -1,0 +1,187 @@
+{
+  "package": "transformers==5.11.0",
+  "torch": "2.13.0+cu130",
+  "seed": 35,
+  "source": "https://github.com/huggingface/transformers/tree/v5.11.0/src/transformers/models/diffusion_gemma",
+  "scope": "Unquantized two-layer text encoder prefill and two denoising passes; not full checkpoint, image path or sampling qualification",
+  "classes": [
+    "DiffusionGemmaDecoderModel",
+    "DiffusionGemmaEncoderTextModel",
+    "StaticCache"
+  ],
+  "static_cache_capacity": 16,
+  "reference_device": "cpu",
+  "attention": "eager",
+  "decoder_mask": "HF boolean mask factory converted to additive bias: 0 for allowed keys, dtype minimum for excluded keys",
+  "files": [
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "reference.npz"
+  ],
+  "source_revision": "v5.11.0",
+  "fixture_file": "reference.npz",
+  "arrays": {
+    "prompt": {
+      "shape": [
+        6
+      ],
+      "dtype": "int32"
+    },
+    "canvas": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32"
+    },
+    "fp32_prefill": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_cache_keys_0": {
+      "shape": [
+        1,
+        2,
+        3,
+        256
+      ],
+      "dtype": "float32"
+    },
+    "fp32_cache_values_0": {
+      "shape": [
+        1,
+        2,
+        3,
+        256
+      ],
+      "dtype": "float32"
+    },
+    "fp32_cache_keys_1": {
+      "shape": [
+        1,
+        1,
+        16,
+        512
+      ],
+      "dtype": "float32"
+    },
+    "fp32_cache_values_1": {
+      "shape": [
+        1,
+        1,
+        16,
+        512
+      ],
+      "dtype": "float32"
+    },
+    "fp32_denoise_0": {
+      "shape": [
+        3,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_soft_0": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp32_denoise_1": {
+      "shape": [
+        3,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp32_soft_1": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_prefill": {
+      "shape": [
+        6,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_cache_keys_0": {
+      "shape": [
+        1,
+        2,
+        3,
+        256
+      ],
+      "dtype": "float32"
+    },
+    "fp16_cache_values_0": {
+      "shape": [
+        1,
+        2,
+        3,
+        256
+      ],
+      "dtype": "float32"
+    },
+    "fp16_cache_keys_1": {
+      "shape": [
+        1,
+        1,
+        16,
+        512
+      ],
+      "dtype": "float32"
+    },
+    "fp16_cache_values_1": {
+      "shape": [
+        1,
+        1,
+        16,
+        512
+      ],
+      "dtype": "float32"
+    },
+    "fp16_denoise_0": {
+      "shape": [
+        3,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_soft_0": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    },
+    "fp16_denoise_1": {
+      "shape": [
+        3,
+        32
+      ],
+      "dtype": "float32"
+    },
+    "fp16_soft_1": {
+      "shape": [
+        3,
+        16
+      ],
+      "dtype": "float32"
+    }
+  },
+  "fixture_design": "Two layers with documented attention head widths 256/512; compact hidden/vocabulary/expert counts. Independent HF eager reference, original seed and token inputs, and two denoising steps.",
+  "documented_geometry": {
+    "hf_id": "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
+    "revision": "ec4ff3df205028f4e81c954c2227f9312b3ec2ea",
+    "head_dim": 256,
+    "global_head_dim": 512
+  }
+}
